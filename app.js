@@ -44,6 +44,7 @@ let toastTimer = 0;
 let remoteSyncTimer = 0;
 let trendHoverIndex = null;
 let trendChartMeta = null;
+const avatarThemeColorCache = new Map();
 
 const elements = {
   onboarding: $("#onboarding"),
@@ -335,7 +336,7 @@ async function refreshAvatarThemeColors() {
 
   for (const participant of targets) {
     try {
-      const themeColor = await extractThemeColorFromDataUrl(participant.avatar);
+      const themeColor = await getAvatarThemeColor(participant);
       if (themeColor && themeColor !== participant.color) {
         participant.color = themeColor;
       }
@@ -348,6 +349,22 @@ async function refreshAvatarThemeColors() {
 function isDefaultParticipantColor(color) {
   const normalizedColor = String(color || "").toLowerCase();
   return !normalizedColor || PARTICIPANT_COLORS.some((item) => item.toLowerCase() === normalizedColor);
+}
+
+async function getAvatarThemeColor(participant) {
+  const cacheKey = getAvatarThemeColorCacheKey(participant);
+  if (avatarThemeColorCache.has(cacheKey)) {
+    return avatarThemeColorCache.get(cacheKey);
+  }
+
+  const themeColor = await extractThemeColorFromDataUrl(participant.avatar);
+  avatarThemeColorCache.set(cacheKey, themeColor);
+  return themeColor;
+}
+
+function getAvatarThemeColorCacheKey(participant) {
+  const avatar = String(participant.avatar || "");
+  return `${participant.id}:${avatar.length}:${avatar.slice(0, 48)}:${avatar.slice(-48)}`;
 }
 
 function createDataStore(config) {
@@ -429,6 +446,7 @@ function startRemoteSync() {
       currentUserId: session.participantId || "",
       sessionRole: session.role || "",
     };
+    await refreshAvatarThemeColors();
     saveLocalState(state);
     renderOnboardingOptions();
     if (!elements.mainApp.classList.contains("hidden")) {
@@ -778,6 +796,7 @@ async function submitProfile(event) {
 async function logout() {
   clearSession();
   state = await dataStore.load();
+  await refreshAvatarThemeColors();
   pendingAvatar = "";
   pendingAvatarColor = "";
   pendingProfileAvatar = "";
