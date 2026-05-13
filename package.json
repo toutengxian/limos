@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/write-config.mjs",
-    "check": "node --check app.js && node --check scripts/write-config.mjs",
-    "deploy": "npx vercel --prod --build-env LIMOS_STORAGE_MODE=supabase --build-env LIMOS_STATE_ID=limos-2026 --build-env LIMOS_SUPABASE_URL=https://wbbjzeymjeooolbjcadh.supabase.co --build-env LIMOS_SUPABASE_ANON_KEY=sb_publishable_xYqGsPAy24B5KDHcKYVrGQ_ZTpS8luR --build-env LIMOS_ADMIN_CODE_HASH=c2bbd6ff1f04663cf7622ac6a0597516daabd2c49f3e126869f1ee887f6aab85 --env LIMOS_STORAGE_MODE=supabase --env LIMOS_STATE_ID=limos-2026 --env LIMOS_SUPABASE_URL=https://wbbjzeymjeooolbjcadh.supabase.co --env LIMOS_SUPABASE_ANON_KEY=sb_publishable_xYqGsPAy24B5KDHcKYVrGQ_ZTpS8luR --env LIMOS_ADMIN_CODE_HASH=c2bbd6ff1f04663cf7622ac6a0597516daabd2c49f3e126869f1ee887f6aab85",
+    "check": "node --check app.js && node --check api/state.js && node --check scripts/write-config.mjs",
+    "deploy": "npx vercel --prod",
     "serve": "python3 -m http.server 5173 --bind 127.0.0.1"
   }
 }

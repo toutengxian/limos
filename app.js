@@ -9,6 +9,8 @@ const STORAGE_KEY = "limos_state_v1";
 const SESSION_KEY = "limos_session_v1";
 const LEGACY_SESSION_KEY = "limos_current_user_id_v1";
 const REMOTE_SYNC_INTERVAL_MS = 15000;
+const AVATAR_SIZE_PX = 192;
+const AVATAR_QUALITY = 0.78;
 const APP_CONFIG = window.LIMOS_CONFIG || {};
 const ADMIN_CODE_HASH = APP_CONFIG.adminCodeHash || "c2bbd6ff1f04663cf7622ac6a0597516daabd2c49f3e126869f1ee887f6aab85";
 const ROLE_MEMBER = "member";
@@ -209,6 +211,7 @@ function saveState() {
   return dataStore.save(state).catch((error) => {
     console.error(error);
     showToast("保存失败，已保留本地副本");
+    throw error;
   });
 }
 
@@ -255,8 +258,8 @@ function normalizeParticipant(participant, index = 0) {
 }
 
 function createDataStore(config) {
-  if (config.storageMode === "supabase" && config.supabaseUrl && config.supabaseAnonKey) {
-    return createSupabaseStore(config);
+  if (config.storageMode === "api") {
+    return createApiStore(config);
   }
 
   return {
@@ -270,68 +273,60 @@ function createDataStore(config) {
   };
 }
 
-function createSupabaseStore(config) {
-  const stateId = config.stateId || "limos-2026";
-  let clientPromise = null;
+function createApiStore(config) {
+  const endpoint = config.apiEndpoint || "/api/state";
 
-  async function getClient() {
-    if (!clientPromise) {
-      clientPromise = import("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm")
-        .then(({ createClient }) => createClient(config.supabaseUrl, config.supabaseAnonKey));
+  async function requestState(options = {}) {
+    const response = await fetch(endpoint, {
+      cache: "no-store",
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...options.headers,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`State API failed: ${response.status}`);
     }
-    return clientPromise;
+
+    return response.json();
   }
 
   return {
-    type: "supabase",
+    type: "api",
     async load() {
       try {
-        const client = await getClient();
-        const { data, error } = await client
-          .from("fat_battle_state")
-          .select("payload")
-          .eq("id", stateId)
-          .maybeSingle();
-
-        if (error) throw error;
+        const data = await requestState();
         if (data?.payload) {
           const remoteState = normalizeState(data.payload);
           saveLocalState(remoteState);
           return remoteState;
         }
-
-        const defaultState = getDefaultState();
-        await this.save(defaultState);
-        return defaultState;
       } catch (error) {
         console.error(error);
-        return loadLocalState();
       }
+
+      return loadLocalState();
     },
     async save(nextState) {
       const nextLocalState = normalizeState(nextState);
       saveLocalState(nextLocalState);
 
-      const client = await getClient();
       const payload = {
         competition: nextLocalState.competition,
         participants: nextLocalState.participants,
       };
-      const { error } = await client
-        .from("fat_battle_state")
-        .upsert({
-          id: stateId,
-          payload,
-          updated_at: new Date().toISOString(),
-        });
-
-      if (error) throw error;
+      await requestState({
+        method: "PUT",
+        body: JSON.stringify({ payload }),
+      });
     },
   };
 }
 
 function startRemoteSync() {
-  if (dataStore.type !== "supabase" || remoteSyncTimer) return;
+  if (dataStore.type !== "api" || remoteSyncTimer) return;
 
   remoteSyncTimer = window.setInterval(async () => {
     const session = loadSession();
@@ -467,6 +462,11 @@ async function submitOnboarding(event) {
   const accessCodeHash = await createAccessCodeHash(accessCode);
   if (!accessCodeHash) return;
 
+  const previousParticipants = state.participants.map((item) => ({
+    ...item,
+    entries: item.entries.map((entry) => ({ ...entry })),
+  }));
+  const previousCompetition = { ...state.competition };
   const participant = {
     id: createParticipantId(),
     name,
@@ -480,8 +480,16 @@ async function submitOnboarding(event) {
   state.participants.push(participant);
   maybeStartCompetition();
   saveSession({ role: ROLE_MEMBER, participantId: participant.id });
+  try {
+    await saveState();
+  } catch {
+    state.participants = previousParticipants;
+    state.competition = previousCompetition;
+    clearSession();
+    return;
+  }
+
   pendingAvatar = "";
-  saveState();
   showApp();
   showToast(isCompetitionActive() ? "5 人到齐，小瘦包开局" : "已入队，等大家上车");
 }
@@ -555,7 +563,7 @@ function getDraftParticipant() {
   };
 }
 
-function submitWeight(event) {
+async function submitWeight(event) {
   event.preventDefault();
   if (!isMemberSession()) {
     showToast("旁观账号不能记录体重");
@@ -574,14 +582,22 @@ function submitWeight(event) {
     return;
   }
 
+  const previousEntries = participant.entries.map((entry) => ({ ...entry }));
   upsertEntry(participant, getTodayISO(), round1(weight));
-  saveState();
+  try {
+    await saveState();
+  } catch {
+    participant.entries = previousEntries;
+    renderAll();
+    return;
+  }
+
   elements.weightInput.value = "";
   renderAll();
   showToast("今天的上秤已更新");
 }
 
-function submitProfile(event) {
+async function submitProfile(event) {
   event.preventDefault();
   if (!isMemberSession()) {
     showToast("旁观账号不能修改资料");
@@ -595,12 +611,22 @@ function submitProfile(event) {
     return;
   }
 
+  const previousName = participant.name;
+  const previousAvatar = participant.avatar;
   participant.name = name;
   if (pendingProfileAvatar) {
     participant.avatar = pendingProfileAvatar;
   }
+  try {
+    await saveState();
+  } catch {
+    participant.name = previousName;
+    participant.avatar = previousAvatar;
+    renderAll();
+    return;
+  }
+
   pendingProfileAvatar = "";
-  saveState();
   renderAll();
   showToast("资料已更新");
 }
@@ -630,9 +656,20 @@ async function leaveTeam() {
   const shouldLeave = window.confirm(`确定退出小队吗？${participant.name} 的资料会从小队中移除。`);
   if (!shouldLeave) return;
 
+  const previousParticipants = state.participants;
+  const previousCompetition = state.competition;
   removeParticipantFromState(participant.id);
   clearSession();
-  await saveState();
+  try {
+    await saveState();
+  } catch {
+    state.participants = previousParticipants;
+    state.competition = previousCompetition;
+    saveSession({ role: ROLE_MEMBER, participantId: participant.id });
+    renderAll();
+    return;
+  }
+
   pendingAvatar = "";
   pendingProfileAvatar = "";
   authMode = state.participants.length ? "login" : "register";
@@ -667,8 +704,18 @@ async function removeParticipantAsAdmin(participantId) {
   const shouldRemove = window.confirm(`确定移除 ${participant.name} 吗？这会删除 TA 的头像、初始体重和登录码。`);
   if (!shouldRemove) return;
 
+  const previousParticipants = state.participants;
+  const previousCompetition = state.competition;
   removeParticipantFromState(participant.id);
-  await saveState();
+  try {
+    await saveState();
+  } catch {
+    state.participants = previousParticipants;
+    state.competition = previousCompetition;
+    renderAll();
+    return;
+  }
+
   renderOnboardingOptions();
   renderAll();
   showToast(`${participant.name} 已移除`);
@@ -1368,7 +1415,7 @@ function upsertEntry(participant, date, weight) {
   participant.entries.push({ date, weight, createdAt: new Date().toISOString() });
 }
 
-function handleAvatarFile(event, onLoad) {
+async function handleAvatarFile(event, onLoad) {
   const file = event.target.files?.[0];
   if (!file) return;
 
@@ -1377,9 +1424,54 @@ function handleAvatarFile(event, onLoad) {
     return;
   }
 
-  const reader = new FileReader();
-  reader.onload = () => onLoad(String(reader.result));
-  reader.readAsDataURL(file);
+  try {
+    onLoad(await resizeAvatarFile(file));
+  } catch (error) {
+    console.error(error);
+    event.target.value = "";
+    showToast("头像处理失败，请换一张图片");
+  }
+}
+
+async function resizeAvatarFile(file) {
+  const image = await loadImageSource(file);
+  const canvas = document.createElement("canvas");
+  canvas.width = AVATAR_SIZE_PX;
+  canvas.height = AVATAR_SIZE_PX;
+
+  const context = canvas.getContext("2d");
+  context.fillStyle = "#f8fafc";
+  context.fillRect(0, 0, AVATAR_SIZE_PX, AVATAR_SIZE_PX);
+
+  const sourceWidth = image.width;
+  const sourceHeight = image.height;
+  const sourceSize = Math.min(sourceWidth, sourceHeight);
+  const sourceX = (sourceWidth - sourceSize) / 2;
+  const sourceY = (sourceHeight - sourceSize) / 2;
+  context.drawImage(image, sourceX, sourceY, sourceSize, sourceSize, 0, 0, AVATAR_SIZE_PX, AVATAR_SIZE_PX);
+
+  if (image.close) image.close();
+  return canvas.toDataURL("image/jpeg", AVATAR_QUALITY);
+}
+
+async function loadImageSource(file) {
+  if (window.createImageBitmap) {
+    return createImageBitmap(file, { imageOrientation: "from-image" });
+  }
+
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Avatar image decode failed"));
+    };
+    image.src = objectUrl;
+  });
 }
 
 function renderAvatar(target, participant, fallback = "", avatarOverride = "") {

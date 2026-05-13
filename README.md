@@ -15,7 +15,7 @@
 - 按与第一名瘦身率差距加权分摊 25,000 元奖池
 - Canvas 折线图展示每位成员的瘦身率走势
 - 本地模式用于开发预览
-- Supabase 模式用于真实多人同步
+- Vercel API 代理 Supabase，用于真实多人同步
 
 ## 本地预览
 
@@ -42,19 +42,20 @@ http://127.0.0.1:5173/
 1. 在 Supabase 新建项目。
 2. 打开 Supabase SQL Editor，执行 [supabase.sql](./supabase.sql)。
 3. 复制 `config.example.js` 的内容到 `config.js`。
-4. 填入项目 URL 和 publishable key：
+4. 使用同源 API 模式：
 
 ```js
 window.LIMOS_CONFIG = {
-  storageMode: "supabase",
+  storageMode: "api",
   stateId: "limos-2026",
-  supabaseUrl: "https://YOUR_PROJECT_ID.supabase.co",
-  supabaseAnonKey: "YOUR_SUPABASE_PUBLISHABLE_KEY",
+  apiEndpoint: "/api/state",
   adminCodeHash: "SHA256_OF_YOUR_ADMIN_CODE",
 };
 ```
 
-没有 Supabase URL 和 publishable key 时，应用会回退到本地模式。这个模式不是线上真实多人同步，只适合开发预览。
+线上浏览器只请求本站的 `/api/state`。Vercel Serverless Function 再用环境变量连接 Supabase，避免用户设备直接访问 `*.supabase.co` 或第三方 SDK CDN。
+
+没有 API 或 Supabase 环境变量时，应用会回退到本地模式。这个模式不是线上真实多人同步，只适合开发预览。
 
 ## Vercel 上线
 
@@ -65,14 +66,14 @@ window.LIMOS_CONFIG = {
 3. 在 Vercel Project Settings -> Environment Variables 添加：
 
 ```text
-LIMOS_STORAGE_MODE=supabase
+LIMOS_STORAGE_MODE=api
 LIMOS_STATE_ID=limos-2026
 LIMOS_SUPABASE_URL=https://YOUR_PROJECT_ID.supabase.co
 LIMOS_SUPABASE_ANON_KEY=YOUR_SUPABASE_PUBLISHABLE_KEY
 LIMOS_ADMIN_CODE_HASH=SHA256_OF_YOUR_ADMIN_CODE
 ```
 
-4. Vercel 构建时会自动生成 `config.js`。
+4. Vercel 构建时会自动生成 `config.js`，其中只包含 `/api/state`，不会把 Supabase URL 和 key 暴露给浏览器。
 5. 部署完成后，把 Vercel URL 发给 5 位成员。
 
 成员登录码为 6-20 个字符。当前默认管理员旁观码是 `limos-25000`；如果要更换，把新旁观码做 SHA-256 后填到 `LIMOS_ADMIN_CODE_HASH`。

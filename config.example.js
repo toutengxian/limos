@@ -1,9 +1,8 @@
 window.LIMOS_CONFIG = {
   // Use "local" for single-device preview mode.
-  // Use "supabase" after creating the table in supabase.sql.
-  storageMode: "supabase",
+  // Use "api" on Vercel so browsers only talk to this app's API.
+  storageMode: "api",
   stateId: "limos-2026",
-  supabaseUrl: "https://YOUR_PROJECT_ID.supabase.co",
-  supabaseAnonKey: "YOUR_SUPABASE_PUBLISHABLE_KEY",
+  apiEndpoint: "/api/state",
   adminCodeHash: "SHA256_OF_YOUR_ADMIN_CODE",
 };
