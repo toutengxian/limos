@@ -34,12 +34,16 @@ const $$ = (selector) => [...document.querySelectorAll(selector)];
 let dataStore = createDataStore(APP_CONFIG);
 let state = getDefaultState();
 let pendingAvatar = "";
+let pendingAvatarColor = "";
 let pendingProfileAvatar = "";
+let pendingProfileAvatarColor = "";
 let authMode = "login";
 let joinRole = USER_ROLE_COMPETITOR;
 let viewScope = VIEW_SCOPE_ALL;
 let toastTimer = 0;
 let remoteSyncTimer = 0;
+let trendHoverIndex = null;
+let trendChartMeta = null;
 
 const elements = {
   onboarding: $("#onboarding"),
@@ -90,6 +94,9 @@ const elements = {
   chartRangeLabel: $("#chart-range-label"),
   winnerCard: $("#winner-card"),
   payoutList: $("#payout-list"),
+  ledgerHelpButton: $("#ledger-help-button"),
+  ledgerHelpModal: $("#ledger-help-modal"),
+  ledgerHelpClose: $("#ledger-help-close"),
   rankList: $("#rank-list"),
   profileAvatar: $("#profile-avatar"),
   profileName: $("#profile-name"),
@@ -113,6 +120,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
 async function init() {
   state = await dataStore.load();
+  await refreshAvatarThemeColors();
   bindEvents();
   authMode = state.participants.length ? "login" : "register";
   renderOnboardingOptions();
@@ -127,13 +135,15 @@ async function init() {
 }
 
 function bindEvents() {
-  elements.avatarInput.addEventListener("change", (event) => handleAvatarFile(event, (dataUrl) => {
+  elements.avatarInput.addEventListener("change", (event) => handleAvatarFile(event, ({ dataUrl, themeColor }) => {
     pendingAvatar = dataUrl;
+    pendingAvatarColor = themeColor;
     renderAvatar(elements.avatarPreview, getDraftParticipant(), "我", dataUrl);
   }));
-  elements.profileAvatarInput.addEventListener("change", (event) => handleAvatarFile(event, (dataUrl) => {
+  elements.profileAvatarInput.addEventListener("change", (event) => handleAvatarFile(event, ({ dataUrl, themeColor }) => {
     pendingProfileAvatar = dataUrl;
-    renderAvatar(elements.profileAvatarPreview, getCurrentUser(), "我", dataUrl);
+    pendingProfileAvatarColor = themeColor;
+    renderAvatar(elements.profileAvatarPreview, getPreviewProfileUser(), "我", dataUrl);
   }));
   elements.onboardingForm.addEventListener("submit", submitOnboarding);
   elements.weightForm.addEventListener("submit", submitWeight);
@@ -143,6 +153,14 @@ function bindEvents() {
   elements.logoutButton.addEventListener("click", logout);
   elements.teamActionButton.addEventListener("click", handleTeamAction);
   elements.copyInviteButton.addEventListener("click", handleCopyInviteLink);
+  elements.ledgerHelpButton.addEventListener("click", openLedgerHelp);
+  elements.ledgerHelpClose.addEventListener("click", closeLedgerHelp);
+  elements.ledgerHelpModal.addEventListener("click", (event) => {
+    if (event.target === elements.ledgerHelpModal) closeLedgerHelp();
+  });
+  elements.trendCanvas.addEventListener("pointermove", handleTrendPointer);
+  elements.trendCanvas.addEventListener("pointerdown", handleTrendPointer);
+  elements.trendCanvas.addEventListener("pointerleave", clearTrendPointer);
   elements.mainApp.addEventListener("click", handleRosterActionClick);
   elements.authTabs.forEach((button) => {
     button.addEventListener("click", () => setAuthMode(button.dataset.authMode));
@@ -160,6 +178,21 @@ function bindEvents() {
   });
 
   window.addEventListener("resize", () => drawTrendChart(getComputed()));
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !elements.ledgerHelpModal.classList.contains("hidden")) {
+      closeLedgerHelp();
+    }
+  });
+}
+
+function openLedgerHelp() {
+  elements.ledgerHelpModal.classList.remove("hidden");
+  elements.ledgerHelpClose.focus();
+}
+
+function closeLedgerHelp() {
+  elements.ledgerHelpModal.classList.add("hidden");
+  elements.ledgerHelpButton.focus();
 }
 
 function getDefaultState() {
@@ -294,6 +327,27 @@ function getCompetitors() {
 
 function getSupporters() {
   return state.participants.filter(isSupporter);
+}
+
+async function refreshAvatarThemeColors() {
+  const targets = state.participants.filter((participant) => participant.avatar && isDefaultParticipantColor(participant.color));
+  if (!targets.length) return;
+
+  for (const participant of targets) {
+    try {
+      const themeColor = await extractThemeColorFromDataUrl(participant.avatar);
+      if (themeColor && themeColor !== participant.color) {
+        participant.color = themeColor;
+      }
+    } catch (error) {
+      console.warn("Avatar theme color extraction failed", error);
+    }
+  }
+}
+
+function isDefaultParticipantColor(color) {
+  const normalizedColor = String(color || "").toLowerCase();
+  return !normalizedColor || PARTICIPANT_COLORS.some((item) => item.toLowerCase() === normalizedColor);
 }
 
 function createDataStore(config) {
@@ -444,6 +498,7 @@ function renderOnboardingOptions() {
 
 function hydrateOnboardingForm() {
   pendingAvatar = "";
+  pendingAvatarColor = "";
   elements.displayName.value = "";
   elements.initialWeight.value = "";
   elements.accessCode.value = "";
@@ -543,7 +598,7 @@ async function submitOnboarding(event) {
   const participant = {
     id: createParticipantId(),
     name,
-    color: PARTICIPANT_COLORS[state.participants.length % PARTICIPANT_COLORS.length],
+    color: pendingAvatarColor || PARTICIPANT_COLORS[state.participants.length % PARTICIPANT_COLORS.length],
     initialWeight: round1(initialWeight),
     avatar: pendingAvatar,
     userRole,
@@ -564,6 +619,7 @@ async function submitOnboarding(event) {
   }
 
   pendingAvatar = "";
+  pendingAvatarColor = "";
   showApp();
   showToast(userRole === USER_ROLE_SUPPORTER ? "已加入陪伴席" : isCompetitionActive() ? "5 位参赛到齐，小瘦包开局" : "已占参赛席，等大家上车");
 }
@@ -630,11 +686,20 @@ function getDraftParticipant() {
   return {
     id: "draft",
     name: elements.displayName?.value || "我",
-    color: PARTICIPANT_COLORS[state.participants.length % PARTICIPANT_COLORS.length],
+    color: pendingAvatarColor || PARTICIPANT_COLORS[state.participants.length % PARTICIPANT_COLORS.length],
     initialWeight: 0,
     avatar: pendingAvatar,
     userRole: joinRole,
     entries: [],
+  };
+}
+
+function getPreviewProfileUser() {
+  const participant = getCurrentUser();
+  if (!participant) return getDraftParticipant();
+  return {
+    ...participant,
+    color: pendingProfileAvatarColor || participant.color,
   };
 }
 
@@ -688,20 +753,24 @@ async function submitProfile(event) {
 
   const previousName = participant.name;
   const previousAvatar = participant.avatar;
+  const previousColor = participant.color;
   participant.name = name;
   if (pendingProfileAvatar) {
     participant.avatar = pendingProfileAvatar;
+    participant.color = pendingProfileAvatarColor || participant.color;
   }
   try {
     await saveState();
   } catch {
     participant.name = previousName;
     participant.avatar = previousAvatar;
+    participant.color = previousColor;
     renderAll();
     return;
   }
 
   pendingProfileAvatar = "";
+  pendingProfileAvatarColor = "";
   renderAll();
   showToast("资料已更新");
 }
@@ -710,7 +779,9 @@ async function logout() {
   clearSession();
   state = await dataStore.load();
   pendingAvatar = "";
+  pendingAvatarColor = "";
   pendingProfileAvatar = "";
+  pendingProfileAvatarColor = "";
   authMode = state.participants.length ? "login" : "register";
   renderOnboardingOptions();
   showOnboarding();
@@ -746,7 +817,9 @@ async function leaveTeam() {
   }
 
   pendingAvatar = "";
+  pendingAvatarColor = "";
   pendingProfileAvatar = "";
+  pendingProfileAvatarColor = "";
   authMode = state.participants.length ? "login" : "register";
   renderOnboardingOptions();
   showOnboarding();
@@ -894,10 +967,10 @@ function renderDashboard(computed) {
     elements.dashboardMoneyLabel.textContent = "结算身份";
     elements.dashboardMoney.textContent = "陪伴";
   } else if (payout.status === "win") {
-    elements.dashboardMoneyLabel.textContent = computed.leaders.length > 1 ? "并列领跑试算" : "今日可收";
+    elements.dashboardMoneyLabel.textContent = computed.leaders.length > 1 ? "并列领跑试算" : "预计可收";
     elements.dashboardMoney.textContent = `¥${formatMoney(payout.prize)}`;
   } else {
-    elements.dashboardMoneyLabel.textContent = "今日应付";
+    elements.dashboardMoneyLabel.textContent = "预计应付";
     elements.dashboardMoney.textContent = `¥${formatMoney(payout.pay)}`;
   }
 
@@ -1014,7 +1087,7 @@ function renderRankPage(computed) {
         <div class="payout-row ${isWin ? "pay-win" : ""}">
           <div>
             <p><strong class="rank-name">${escapeHtml(item.name)}${roleBadgeHtml(item)}</strong></p>
-            <p class="pay-sub">${isWin ? "今日可收" : `落后 ${formatNumber(item.gapToLeader, 2)} 个百分点`}</p>
+            <p class="pay-sub">${isWin ? "预计可收" : `落后 ${formatNumber(item.gapToLeader, 2)} 个百分点`}</p>
           </div>
           <strong>${isWin ? "+" : "-"}¥${formatMoney(isWin ? payout.prize : payout.pay)}</strong>
         </div>
@@ -1249,6 +1322,18 @@ function roleBadgeHtml(participant) {
   return `<span class="role-badge ${supporter ? "supporter" : "competitor"}">${supporter ? "陪伴" : "参赛"}</span>`;
 }
 
+function rankIndexHtml(item) {
+  const crownHtml = item.isLeader
+    ? `
+        <svg class="rank-crown" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M5 17h14l1-9-5 4-3-6-3 6-5-4 1 9Z" />
+          <path d="M6.5 20h11" />
+        </svg>
+      `
+    : "";
+  return `<span class="rank-index">${crownHtml}<span>${getRankNumber(item)}</span></span>`;
+}
+
 function waitingListHtml() {
   const competitors = getCompetitors();
   const supporters = viewScope === VIEW_SCOPE_COMPETITORS ? [] : getSupporters();
@@ -1364,7 +1449,7 @@ function rankRowHtml(item, computed, compact) {
   const payout = computed.payouts[item.id];
   const moneyText = isSupporter(item)
     ? "陪伴不结算"
-    : payout.status === "win" ? `得 ¥${formatMoney(payout.prize)}` : `付 ¥${formatMoney(payout.pay)}`;
+    : payout.status === "win" ? `预计得 ¥${formatMoney(payout.prize)}` : `预计付 ¥${formatMoney(payout.pay)}`;
   const rowClasses = [
     "rank-row",
     item.id === state.currentUserId ? "is-me" : "",
@@ -1373,7 +1458,7 @@ function rankRowHtml(item, computed, compact) {
   return `
     <div class="${rowClasses}">
       <div class="rank-left">
-        <span class="rank-index">${getRankNumber(item)}</span>
+        ${rankIndexHtml(item)}
         ${avatarHtml(item, compact ? "avatar-sm" : "avatar-md")}
         <div>
           <p class="rank-name">${escapeHtml(item.name)}${item.id === state.currentUserId ? " · 我" : ""}${roleBadgeHtml(item)}</p>
@@ -1419,6 +1504,21 @@ function renderHeatmap(computed) {
   }).join("");
 }
 
+function handleTrendPointer(event) {
+  if (!trendChartMeta || trendChartMeta.timelineLength <= 1) return;
+  const rect = elements.trendCanvas.getBoundingClientRect();
+  const relativeX = clamp(event.clientX - rect.left, trendChartMeta.pad.left, rect.width - trendChartMeta.pad.right);
+  const ratio = (relativeX - trendChartMeta.pad.left) / trendChartMeta.width;
+  trendHoverIndex = Math.round(ratio * (trendChartMeta.timelineLength - 1));
+  drawTrendChart(getComputed());
+}
+
+function clearTrendPointer() {
+  if (trendHoverIndex === null) return;
+  trendHoverIndex = null;
+  drawTrendChart(getComputed());
+}
+
 function drawTrendChart(computed) {
   const canvas = elements.trendCanvas;
   if (!canvas || !canvas.offsetWidth) return;
@@ -1432,6 +1532,7 @@ function drawTrendChart(computed) {
   ctx.clearRect(0, 0, rect.width, rect.height);
 
   if (!isCompetitionActive()) {
+    trendChartMeta = null;
     ctx.fillStyle = "#6f7882";
     ctx.font = "13px Inter, system-ui, sans-serif";
     ctx.textAlign = "center";
@@ -1458,11 +1559,12 @@ function drawTrendChart(computed) {
     maxValue += 0.8;
   }
 
-  const pad = { top: 22, right: 18, bottom: 38, left: 42 };
+  const pad = { top: 24, right: 20, bottom: 38, left: 56 };
   const width = rect.width - pad.left - pad.right;
   const height = rect.height - pad.top - pad.bottom;
   const xFor = (index) => pad.left + (timeline.length === 1 ? width : (width * index) / (timeline.length - 1));
   const yFor = (value) => pad.top + ((maxValue - value) / (maxValue - minValue)) * height;
+  trendChartMeta = { pad, width, timelineLength: timeline.length };
 
   ctx.lineWidth = 1;
   ctx.font = "11px Inter, system-ui, sans-serif";
@@ -1480,7 +1582,7 @@ function drawTrendChart(computed) {
     ctx.setLineDash([]);
     ctx.fillStyle = "#738091";
     ctx.textAlign = "right";
-    ctx.fillText(`${formatNumber(value, 1)}%`, pad.left - 8, y);
+    ctx.fillText(`${formatNumber(value, 1)}%`, pad.left - 12, y);
   }
 
   if (minValue < 0 && maxValue > 0) {
@@ -1502,32 +1604,145 @@ function drawTrendChart(computed) {
 
   series.slice().reverse().forEach((participant) => {
     const isLeader = computed.leaders.some((leader) => leader.id === participant.id);
+    const coordinates = participant.points.map((point, index) => ({
+      x: xFor(index),
+      y: yFor(point),
+      value: point,
+    }));
     ctx.strokeStyle = participant.color;
     ctx.lineWidth = isLeader ? 3.5 : 2;
     ctx.globalAlpha = isLeader ? 1 : 0.68;
-    ctx.beginPath();
-    participant.points.forEach((point, index) => {
-      const x = xFor(index);
-      const y = yFor(point);
-      if (index === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
+    drawSmoothPath(ctx, coordinates);
     ctx.stroke();
 
-    participant.points.forEach((point, index) => {
-      const x = xFor(index);
-      const y = yFor(point);
+    coordinates.forEach(({ x, y }, index) => {
+      const isHoveredPoint = trendHoverIndex === index;
       ctx.fillStyle = "#ffffff";
       ctx.beginPath();
-      ctx.arc(x, y, isLeader ? 4.5 : 3.5, 0, Math.PI * 2);
+      ctx.arc(x, y, isHoveredPoint ? 5.5 : isLeader ? 4.5 : 3.5, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = participant.color;
       ctx.beginPath();
-      ctx.arc(x, y, isLeader ? 3 : 2.2, 0, Math.PI * 2);
+      ctx.arc(x, y, isHoveredPoint ? 3.6 : isLeader ? 3 : 2.2, 0, Math.PI * 2);
       ctx.fill();
     });
     ctx.globalAlpha = 1;
   });
+
+  if (trendHoverIndex !== null && timeline[trendHoverIndex]) {
+    drawTrendTooltip(ctx, rect, timeline, series, xFor, yFor);
+  }
+}
+
+function drawSmoothPath(ctx, points) {
+  if (!points.length) return;
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+  if (points.length === 1) return;
+
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const previous = points[index - 1] || points[index];
+    const current = points[index];
+    const next = points[index + 1];
+    const afterNext = points[index + 2] || next;
+    const controlOneX = current.x + (next.x - previous.x) / 6;
+    const controlOneY = current.y + (next.y - previous.y) / 6;
+    const controlTwoX = next.x - (afterNext.x - current.x) / 6;
+    const controlTwoY = next.y - (afterNext.y - current.y) / 6;
+    ctx.bezierCurveTo(controlOneX, controlOneY, controlTwoX, controlTwoY, next.x, next.y);
+  }
+}
+
+function drawTrendTooltip(ctx, rect, timeline, series, xFor, yFor) {
+  const index = Math.round(clamp(trendHoverIndex, 0, timeline.length - 1));
+  const x = xFor(index);
+  const rows = series
+    .map((participant) => ({
+      name: participant.name,
+      color: participant.color,
+      value: participant.points[index],
+      y: yFor(participant.points[index]),
+    }))
+    .sort((a, b) => b.value - a.value);
+  const visibleRows = rows.slice(0, 5);
+  const cardWidth = Math.min(188, rect.width - 34);
+  const cardHeight = 34 + visibleRows.length * 20;
+  const cardX = x + cardWidth + 16 < rect.width ? x + 12 : Math.max(12, x - cardWidth - 12);
+  const cardY = 18;
+
+  ctx.save();
+  ctx.strokeStyle = "rgba(16, 20, 24, 0.16)";
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 5]);
+  ctx.beginPath();
+  ctx.moveTo(x, trendChartMeta.pad.top);
+  ctx.lineTo(x, rect.height - trendChartMeta.pad.bottom);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  rows.forEach((row) => {
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.arc(x, row.y, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = row.color;
+    ctx.beginPath();
+    ctx.arc(x, row.y, 3.7, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  roundedRectPath(ctx, cardX, cardY, cardWidth, cardHeight, 16);
+  ctx.fillStyle = "rgba(255, 255, 255, 0.86)";
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.82)";
+  ctx.stroke();
+
+  ctx.fillStyle = "#101418";
+  ctx.font = "700 12px Inter, system-ui, sans-serif";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText(timeline[index].label, cardX + 14, cardY + 18);
+
+  ctx.font = "650 11px Inter, system-ui, sans-serif";
+  visibleRows.forEach((row, rowIndex) => {
+    const y = cardY + 39 + rowIndex * 20;
+    ctx.fillStyle = row.color;
+    ctx.beginPath();
+    ctx.arc(cardX + 17, y, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#252c33";
+    ctx.textAlign = "left";
+    ctx.fillText(truncateCanvasText(ctx, row.name, 72), cardX + 28, y);
+    ctx.fillStyle = row.value < 0 ? "#d84a5f" : "#1f7a5c";
+    ctx.textAlign = "right";
+    ctx.fillText(formatRate(row.value), cardX + cardWidth - 14, y);
+  });
+  ctx.restore();
+}
+
+function roundedRectPath(ctx, x, y, width, height, radius) {
+  const nextRadius = Math.min(radius, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + nextRadius, y);
+  ctx.lineTo(x + width - nextRadius, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + nextRadius);
+  ctx.lineTo(x + width, y + height - nextRadius);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - nextRadius, y + height);
+  ctx.lineTo(x + nextRadius, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - nextRadius);
+  ctx.lineTo(x, y + nextRadius);
+  ctx.quadraticCurveTo(x, y, x + nextRadius, y);
+  ctx.closePath();
+}
+
+function truncateCanvasText(ctx, text, maxWidth) {
+  const value = String(text || "");
+  if (ctx.measureText(value).width <= maxWidth) return value;
+  let truncated = value;
+  while (truncated.length > 1 && ctx.measureText(`${truncated}…`).width > maxWidth) {
+    truncated = truncated.slice(0, -1);
+  }
+  return `${truncated}…`;
 }
 
 function getTimeline() {
@@ -1613,7 +1828,7 @@ async function handleAvatarFile(event, onLoad) {
   }
 
   try {
-    onLoad(await resizeAvatarFile(file));
+    onLoad(await processAvatarFile(file));
   } catch (error) {
     console.error(error);
     event.target.value = "";
@@ -1621,7 +1836,7 @@ async function handleAvatarFile(event, onLoad) {
   }
 }
 
-async function resizeAvatarFile(file) {
+async function processAvatarFile(file) {
   const image = await loadImageSource(file);
   const canvas = document.createElement("canvas");
   canvas.width = AVATAR_SIZE_PX;
@@ -1638,8 +1853,10 @@ async function resizeAvatarFile(file) {
   const sourceY = (sourceHeight - sourceSize) / 2;
   context.drawImage(image, sourceX, sourceY, sourceSize, sourceSize, 0, 0, AVATAR_SIZE_PX, AVATAR_SIZE_PX);
 
+  const themeColor = extractThemeColor(context, AVATAR_SIZE_PX);
+  const dataUrl = canvas.toDataURL("image/jpeg", AVATAR_QUALITY);
   if (image.close) image.close();
-  return canvas.toDataURL("image/jpeg", AVATAR_QUALITY);
+  return { dataUrl, themeColor };
 }
 
 async function loadImageSource(file) {
@@ -1660,6 +1877,111 @@ async function loadImageSource(file) {
     };
     image.src = objectUrl;
   });
+}
+
+async function extractThemeColorFromDataUrl(dataUrl) {
+  const image = await loadImageElement(dataUrl);
+  const size = AVATAR_SIZE_PX;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext("2d");
+  context.drawImage(image, 0, 0, size, size);
+  return extractThemeColor(context, size);
+}
+
+function loadImageElement(source) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Avatar image decode failed"));
+    image.src = source;
+  });
+}
+
+function extractThemeColor(context, size) {
+  const pixels = context.getImageData(0, 0, size, size).data;
+  let red = 0;
+  let green = 0;
+  let blue = 0;
+  let total = 0;
+
+  for (let y = 0; y < size; y += 4) {
+    for (let x = 0; x < size; x += 4) {
+      const index = (y * size + x) * 4;
+      const alpha = pixels[index + 3] / 255;
+      if (alpha < 0.5) continue;
+
+      const r = pixels[index];
+      const g = pixels[index + 1];
+      const b = pixels[index + 2];
+      const [hue, saturation, lightness] = rgbToHsl(r, g, b);
+      if (lightness < 0.12 || lightness > 0.88 || saturation < 0.12) continue;
+
+      const lightnessScore = 1 - Math.min(0.72, Math.abs(lightness - 0.5) * 1.8);
+      const weight = alpha * (0.35 + saturation) * lightnessScore;
+      const [sr, sg, sb] = hslToRgb(hue, clamp(saturation * 1.15, 0.42, 0.78), clamp(lightness, 0.34, 0.48));
+      red += sr * weight;
+      green += sg * weight;
+      blue += sb * weight;
+      total += weight;
+    }
+  }
+
+  if (!total) return "#64748b";
+  return rgbToHex(red / total, green / total, blue / total);
+}
+
+function rgbToHsl(red, green, blue) {
+  const r = red / 255;
+  const g = green / 255;
+  const b = blue / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const lightness = (max + min) / 2;
+  if (max === min) return [0, 0, lightness];
+
+  const delta = max - min;
+  const saturation = lightness > 0.5 ? delta / (2 - max - min) : delta / (max + min);
+  let hue = 0;
+  if (max === r) hue = (g - b) / delta + (g < b ? 6 : 0);
+  else if (max === g) hue = (b - r) / delta + 2;
+  else hue = (r - g) / delta + 4;
+  return [hue / 6, saturation, lightness];
+}
+
+function hslToRgb(hue, saturation, lightness) {
+  if (saturation === 0) {
+    const value = Math.round(lightness * 255);
+    return [value, value, value];
+  }
+
+  const hueToRgb = (p, q, t) => {
+    let next = t;
+    if (next < 0) next += 1;
+    if (next > 1) next -= 1;
+    if (next < 1 / 6) return p + (q - p) * 6 * next;
+    if (next < 1 / 2) return q;
+    if (next < 2 / 3) return p + (q - p) * (2 / 3 - next) * 6;
+    return p;
+  };
+
+  const q = lightness < 0.5 ? lightness * (1 + saturation) : lightness + saturation - lightness * saturation;
+  const p = 2 * lightness - q;
+  return [
+    Math.round(hueToRgb(p, q, hue + 1 / 3) * 255),
+    Math.round(hueToRgb(p, q, hue) * 255),
+    Math.round(hueToRgb(p, q, hue - 1 / 3) * 255),
+  ];
+}
+
+function rgbToHex(red, green, blue) {
+  return `#${[red, green, blue].map((value) => Math.round(clamp(value, 0, 255)).toString(16).padStart(2, "0")).join("")}`;
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
 }
 
 function renderAvatar(target, participant, fallback = "", avatarOverride = "") {
