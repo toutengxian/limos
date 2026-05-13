@@ -1249,6 +1249,18 @@ function roleBadgeHtml(participant) {
   return `<span class="role-badge ${supporter ? "supporter" : "competitor"}">${supporter ? "陪伴" : "参赛"}</span>`;
 }
 
+function rankIndexHtml(item) {
+  const crownHtml = item.isLeader
+    ? `
+        <svg class="rank-crown" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M5 17h14l1-9-5 4-3-6-3 6-5-4 1 9Z" />
+          <path d="M6.5 20h11" />
+        </svg>
+      `
+    : "";
+  return `<span class="rank-index">${crownHtml}<span>${getRankNumber(item)}</span></span>`;
+}
+
 function waitingListHtml() {
   const competitors = getCompetitors();
   const supporters = viewScope === VIEW_SCOPE_COMPETITORS ? [] : getSupporters();
@@ -1373,7 +1385,7 @@ function rankRowHtml(item, computed, compact) {
   return `
     <div class="${rowClasses}">
       <div class="rank-left">
-        <span class="rank-index">${getRankNumber(item)}</span>
+        ${rankIndexHtml(item)}
         ${avatarHtml(item, compact ? "avatar-sm" : "avatar-md")}
         <div>
           <p class="rank-name">${escapeHtml(item.name)}${item.id === state.currentUserId ? " · 我" : ""}${roleBadgeHtml(item)}</p>
