@@ -48,8 +48,9 @@ http://127.0.0.1:5173/
 
 ```js
 window.LIMOS_CONFIG = {
+  environment: "development",
   storageMode: "api",
-  stateId: "limos-2026",
+  stateId: "limos-2026-dev",
   apiEndpoint: "/api/state",
   adminCodeHash: "SHA256_OF_YOUR_ADMIN_CODE",
 };
@@ -68,6 +69,7 @@ window.LIMOS_CONFIG = {
 3. 在 Vercel Project Settings -> Environment Variables 添加：
 
 ```text
+LIMOS_ENV=production
 LIMOS_STORAGE_MODE=api
 LIMOS_STATE_ID=limos-2026
 LIMOS_SUPABASE_URL=https://YOUR_PROJECT_ID.supabase.co
@@ -92,6 +94,14 @@ npm run deploy
 ```bash
 VERCEL_TOKEN=YOUR_TOKEN npx vercel --prod --yes --token YOUR_TOKEN
 ```
+
+## 开发与生产环境
+
+开发环境和生产环境按分支、Vercel 环境变量、Supabase 项目三层隔离。详见 [docs/environments.md](./docs/environments.md)。
+
+- `develop`：开发测试，连接 dev Supabase，使用 Preview/Development 环境变量
+- `main`：正式环境，连接生产 Supabase，使用 Production 环境变量
+- `npm run promote:prod`：从 `develop` 检查并合并到 `main`，触发生产部署
 
 ## 手动部署
 
