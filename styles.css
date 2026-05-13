@@ -428,15 +428,18 @@ select.input {
   width: 100%;
   min-width: 0;
   min-height: 52px;
-  border: 1px solid var(--glass-line);
+  border: 1px solid rgba(16, 20, 24, 0.14);
   border-radius: 15px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.48)),
-    rgba(248, 250, 247, 0.62);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(249, 251, 247, 0.78)),
+    rgba(248, 250, 247, 0.9);
   color: var(--ink);
   padding: 0 14px;
   outline: none;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.78), inset 0 -1px 0 rgba(16, 20, 24, 0.025);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.86),
+    inset 0 -1px 0 rgba(16, 20, 24, 0.045),
+    0 1px 2px rgba(16, 20, 24, 0.025);
   -webkit-backdrop-filter: blur(12px) saturate(1.15);
   backdrop-filter: blur(12px) saturate(1.15);
 }
@@ -550,14 +553,15 @@ select.input {
 .secondary-button {
   width: 100%;
   min-height: 52px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 16px;
   color: #fff;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0)),
-    var(--ink);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0)),
+    rgba(31, 37, 43, 0.92);
   font-size: 15px;
   font-weight: 760;
-  box-shadow: 0 13px 28px rgba(16, 20, 24, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  box-shadow: 0 8px 18px rgba(16, 20, 24, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.14);
   transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease;
 }
 
@@ -1197,6 +1201,8 @@ select.input {
   display: block;
   width: 100%;
   height: 334px;
+  cursor: crosshair;
+  touch-action: pan-y;
 }
 
 .legend-list {
@@ -1462,9 +1468,9 @@ select.input {
 .nav-active {
   color: #fff;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0)),
-    rgba(16, 20, 24, 0.94);
-  box-shadow: 0 10px 22px rgba(16, 20, 24, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0)),
+    rgba(31, 37, 43, 0.9);
+  box-shadow: 0 6px 16px rgba(16, 20, 24, 0.13), inset 0 1px 0 rgba(255, 255, 255, 0.14);
 }
 
 .nav-active .nav-icon {
@@ -1487,15 +1493,15 @@ select.input {
   inset: 0;
   z-index: 70;
   display: grid;
-  place-items: end center;
-  padding: 18px 16px calc(18px + env(safe-area-inset-bottom));
+  place-items: center;
+  padding: 20px 16px;
   background: rgba(16, 20, 24, 0.22);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
   backdrop-filter: blur(16px) saturate(1.2);
 }
 
 .modal-panel {
-  width: min(100%, 398px);
+  width: min(100%, 360px);
   border: 1px solid rgba(255, 255, 255, 0.72);
   border-radius: 24px;
   background:
@@ -1549,21 +1555,52 @@ select.input {
 
 .ledger-help-copy {
   display: grid;
-  gap: 12px;
+  gap: 10px;
   margin-top: 14px;
 }
 
-.ledger-help-copy p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 620;
-  line-height: 1.58;
+.ledger-help-step,
+.ledger-help-formula {
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  border: 1px solid rgba(16, 20, 24, 0.07);
+  border-radius: 16px;
+  padding: 10px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.74), rgba(255, 255, 255, 0.42)),
+    rgba(248, 250, 247, 0.62);
 }
 
-.ledger-help-copy strong {
+.ledger-help-step span,
+.ledger-help-formula span {
+  display: inline-grid;
+  min-height: 32px;
+  place-items: center;
+  border-radius: 999px;
   color: var(--ink);
+  background: var(--accent);
+  font-size: 12px;
   font-weight: 840;
+}
+
+.ledger-help-step p,
+.ledger-help-formula strong {
+  min-width: 0;
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 680;
+  line-height: 1.45;
+}
+
+.ledger-help-formula {
+  border-color: rgba(216, 255, 79, 0.45);
+  background:
+    linear-gradient(145deg, rgba(216, 255, 79, 0.22), rgba(255, 255, 255, 0.46)),
+    rgba(248, 250, 247, 0.72);
 }
 
 .toast {

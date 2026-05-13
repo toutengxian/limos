@@ -307,10 +307,18 @@
             <button id="ledger-help-close" class="modal-close-button" type="button" aria-label="关闭账本说明">×</button>
           </div>
           <div class="ledger-help-copy">
-            <p><strong>只算参赛成员。</strong>陪伴用户可以记录体重、看曲线和排名，但不参与奖金分配。</p>
-            <p><strong>先算瘦身率。</strong>瘦身率 = (初始体重 - 当前体重) / 初始体重。</p>
-            <p><strong>赢家拿奖池。</strong>9 月 30 日瘦身率最高者赢得奖池；如果并列第一，奖池平分。</p>
-            <p><strong>输家按差距付款。</strong>付款 = 本人与赢家的瘦身率差距 / 所有输家差距总和 × ¥25,000。</p>
+            <div class="ledger-help-step">
+              <span>参赛</span>
+              <p>只有参赛成员进入奖金计算，陪伴不结算。</p>
+            </div>
+            <div class="ledger-help-step">
+              <span>排名</span>
+              <p>按瘦身率排序：初始体重减当前体重，再除以初始体重。</p>
+            </div>
+            <div class="ledger-help-formula">
+              <span>付款</span>
+              <strong>个人差距 ÷ 输家总差距 × ¥25,000</strong>
+            </div>
           </div>
         </section>
       </div>
