@@ -86,6 +86,7 @@ const elements = {
   profileNameInput: $("#profile-name-input"),
   profileAvatarInput: $("#profile-avatar-input"),
   profileAvatarPreview: $("#profile-avatar-preview"),
+  leaveTeamButton: $("#leave-team-button"),
   historyList: $("#history-list"),
   resetButton: $("#reset-button"),
   logoutButton: $("#logout-button"),
@@ -125,10 +126,12 @@ function bindEvents() {
   elements.onboardingForm.addEventListener("submit", submitOnboarding);
   elements.weightForm.addEventListener("submit", submitWeight);
   elements.profileForm.addEventListener("submit", submitProfile);
+  elements.leaveTeamButton.addEventListener("click", leaveTeam);
   elements.resetButton.addEventListener("click", logout);
   elements.logoutButton.addEventListener("click", logout);
   elements.teamActionButton.addEventListener("click", handleTeamAction);
   elements.copyInviteButton.addEventListener("click", handleCopyInviteLink);
+  elements.mainApp.addEventListener("click", handleRosterActionClick);
   elements.authTabs.forEach((button) => {
     button.addEventListener("click", () => setAuthMode(button.dataset.authMode));
   });
@@ -203,7 +206,7 @@ function clearSession() {
 }
 
 function saveState() {
-  dataStore.save(state).catch((error) => {
+  return dataStore.save(state).catch((error) => {
     console.error(error);
     showToast("保存失败，已保留本地副本");
   });
@@ -613,6 +616,75 @@ async function logout() {
   showToast("已退出登录");
 }
 
+async function leaveTeam() {
+  if (!isMemberSession()) {
+    showToast("只有成员本人可以退出小队");
+    return;
+  }
+  if (isCompetitionActive()) {
+    showToast("小队已开局，不能退出");
+    return;
+  }
+
+  const participant = getCurrentUser();
+  const shouldLeave = window.confirm(`确定退出小队吗？${participant.name} 的资料会从小队中移除。`);
+  if (!shouldLeave) return;
+
+  removeParticipantFromState(participant.id);
+  clearSession();
+  await saveState();
+  pendingAvatar = "";
+  pendingProfileAvatar = "";
+  authMode = state.participants.length ? "login" : "register";
+  renderOnboardingOptions();
+  showOnboarding();
+  showToast("已退出小队");
+}
+
+async function handleRosterActionClick(event) {
+  const removeButton = event.target.closest("[data-remove-participant]");
+  if (!removeButton) return;
+
+  await removeParticipantAsAdmin(removeButton.dataset.removeParticipant);
+}
+
+async function removeParticipantAsAdmin(participantId) {
+  if (!isAdminSession()) {
+    showToast("只有管理员可以移除成员");
+    return;
+  }
+  if (isCompetitionActive()) {
+    showToast("小队已开局，不能移除成员");
+    return;
+  }
+
+  const participant = state.participants.find((item) => item.id === participantId);
+  if (!participant) {
+    showToast("成员不存在");
+    return;
+  }
+
+  const shouldRemove = window.confirm(`确定移除 ${participant.name} 吗？这会删除 TA 的头像、初始体重和登录码。`);
+  if (!shouldRemove) return;
+
+  removeParticipantFromState(participant.id);
+  await saveState();
+  renderOnboardingOptions();
+  renderAll();
+  showToast(`${participant.name} 已移除`);
+}
+
+function removeParticipantFromState(participantId) {
+  state.participants = state.participants.filter((participant) => participant.id !== participantId);
+  if (state.participants.length < ACTIVITY.maxParticipants) {
+    state.competition = {
+      status: "waiting",
+      startedAt: "",
+      maxParticipants: ACTIVITY.maxParticipants,
+    };
+  }
+}
+
 function renderAll() {
   if (!hasValidSession()) {
     showOnboarding();
@@ -830,6 +902,7 @@ function renderProfile(computed) {
   elements.profileForm.classList.remove("hidden");
   const current = getCurrentUser();
   const result = computed.results.find((item) => item.id === current.id);
+  elements.leaveTeamButton.classList.toggle("hidden", isCompetitionActive());
   renderAvatar(elements.profileAvatar, current);
   elements.profileName.textContent = current.name;
   elements.profileSummary.textContent = isCompetitionActive()
@@ -1025,6 +1098,13 @@ function waitingListHtml() {
       `;
     }
 
+    const rosterActionHtml = isAdminSession() && !isCompetitionActive()
+      ? `<button class="mini-danger-button" type="button" data-remove-participant="${escapeHtml(participant.id)}">移除</button>`
+      : `
+          <strong>已就位</strong>
+          <small>等开局</small>
+        `;
+
     return `
       <div class="rank-row ${participant.id === state.currentUserId ? "is-me" : ""}">
         <div class="rank-left">
@@ -1036,8 +1116,7 @@ function waitingListHtml() {
           </div>
         </div>
         <div class="rank-metric">
-          <strong>已就位</strong>
-          <small>等开局</small>
+          ${rosterActionHtml}
         </div>
       </div>
     `;

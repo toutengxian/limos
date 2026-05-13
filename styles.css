@@ -422,6 +422,8 @@ select.input {
 .primary-button,
 .secondary-button,
 .danger-button,
+.danger-outline-button,
+.mini-danger-button,
 .text-button,
 .ghost-icon-button,
 .nav-button {
@@ -465,6 +467,27 @@ select.input {
 
 .danger-button {
   color: var(--danger);
+}
+
+.danger-outline-button {
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid rgba(216, 74, 95, 0.26);
+  border-radius: 16px;
+  color: var(--danger);
+  background: var(--danger-soft);
+  font-size: 14px;
+  font-weight: 760;
+}
+
+.mini-danger-button {
+  min-height: 30px;
+  border-radius: 999px;
+  padding: 0 12px;
+  color: var(--danger);
+  background: var(--danger-soft);
+  font-size: 12px;
+  font-weight: 780;
 }
 
 .main-app {
