@@ -38,11 +38,17 @@
     <main id="app" class="app-shell">
       <section id="onboarding" class="screen screen-active onboarding-screen" aria-labelledby="onboarding-title">
         <div class="brand-block">
-          <div class="brand-mark" aria-hidden="true">Li</div>
+          <div class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 48 48" focusable="false">
+              <path class="logo-arc" d="M13 30c5 8 17 9 24 1" />
+              <path class="logo-leaf" d="M25 9c-8 4-12 10-12 17 0 8 6 13 13 13s12-5 12-13C38 18 33 13 25 9Z" />
+              <path class="logo-line" d="M25 15c-2 7-2 13 0 18" />
+            </svg>
+          </div>
           <div>
             <p class="eyebrow">小瘦包 · 25,000 元奖池</p>
             <h1 id="onboarding-title">Limos</h1>
-            <p class="brand-copy">5 人减重小队，满员开局。9 月 30 日按减重率结算，差距越大，承担越多。</p>
+            <p class="brand-copy">5 位参赛成员满员开局。陪伴用户也能记录体重和看战况，但不参与奖金结算。</p>
           </div>
         </div>
 
@@ -51,13 +57,12 @@
             <div id="signup-roster" class="signup-roster" aria-label="小队席位"></div>
             <span id="signup-count">还差 5 位上车</span>
             <strong>占一个小瘦包席位</strong>
-            <small>上传头像和初始体重。5 个席位坐满后自动开局。</small>
+            <small>参赛席位满 5 人后自动开局；陪伴用户不占参赛席。</small>
           </div>
 
           <div class="auth-tabs" role="tablist" aria-label="登录方式">
             <button class="auth-tab auth-tab-active" type="button" data-auth-mode="login">成员登录</button>
-            <button class="auth-tab" type="button" data-auth-mode="register">首次入队</button>
-            <button class="auth-tab" type="button" data-auth-mode="admin">管理员旁观</button>
+            <button class="auth-tab" type="button" data-auth-mode="register">首次加入</button>
           </div>
 
           <div id="login-fields" class="auth-panel">
@@ -72,6 +77,17 @@
           </div>
 
           <div id="register-fields" class="auth-panel hidden">
+            <div class="role-choice" role="group" aria-label="加入身份">
+              <button class="role-choice-button is-active" type="button" data-join-role="competitor">
+                <strong>参赛</strong>
+                <span>占 5 人席位，参与奖池结算</span>
+              </button>
+              <button class="role-choice-button" type="button" data-join-role="supporter">
+                <strong>陪伴</strong>
+                <span>记录体重，不参与分钱</span>
+              </button>
+            </div>
+
             <label class="field-label" for="display-name">怎么称呼你</label>
             <input id="display-name" class="input" type="text" autocomplete="nickname" maxlength="12" />
 
@@ -90,19 +106,20 @@
               <span id="avatar-preview" class="avatar avatar-xl">我</span>
               <span>
                 <strong>放上你的头像</strong>
-                <small>必填。大家会在排位、曲线和账本里看到它。</small>
+                <small>必填。大家会在排位和曲线里看到它。</small>
               </span>
             </label>
             <input id="avatar-input" class="visually-hidden" type="file" accept="image/*" />
           </div>
 
           <div id="admin-fields" class="auth-panel hidden">
-            <label class="field-label" for="admin-code">管理员旁观码</label>
+            <label class="field-label" for="admin-code">管理员码</label>
             <input id="admin-code" class="input" type="password" autocomplete="current-password" />
-            <p class="form-note">旁观账号只能看全局战况，不能记录体重或修改成员资料。</p>
+            <p class="form-note">管理员只负责查看和维护成员，不参与比赛，也不能记录体重。</p>
           </div>
 
           <button id="auth-submit" class="primary-button" type="submit">登录</button>
+          <button id="admin-entry-button" class="admin-entry-button" type="button">管理员入口</button>
         </form>
       </section>
 
@@ -161,7 +178,13 @@
           <section class="section-block">
             <div class="section-heading">
               <h2>小队战况</h2>
-              <button id="team-action-button" class="text-button" type="button">邀请成员</button>
+              <div class="heading-actions">
+                <div class="scope-toggle" aria-label="战况筛选">
+                  <button class="scope-button is-active" type="button" data-view-scope="all">全部</button>
+                  <button class="scope-button" type="button" data-view-scope="competitors">仅参赛</button>
+                </div>
+                <button id="team-action-button" class="text-button" type="button">邀请成员</button>
+              </div>
             </div>
             <div id="invite-panel" class="invite-panel hidden">
               <div>
@@ -180,18 +203,37 @@
         <section id="page-trend" class="page">
           <div class="section-heading sticky-heading">
             <h2>瘦身率走势</h2>
-            <span id="chart-range-label" class="muted">--</span>
+            <div class="heading-actions">
+              <div class="scope-toggle" aria-label="曲线筛选">
+                <button class="scope-button is-active" type="button" data-view-scope="all">全部</button>
+                <button class="scope-button" type="button" data-view-scope="competitors">仅参赛</button>
+              </div>
+              <span id="chart-range-label" class="muted">--</span>
+            </div>
           </div>
           <div class="chart-panel">
             <canvas id="trend-canvas" aria-label="小瘦包成员减重率折线图"></canvas>
           </div>
           <div id="trend-legend" class="legend-list"></div>
+          <section class="section-block">
+            <div class="section-heading">
+              <h2>上秤日历</h2>
+              <span class="muted">最近 14 天</span>
+            </div>
+            <div id="activity-heatmap" class="heatmap-list"></div>
+          </section>
         </section>
 
         <section id="page-rank" class="page">
           <div class="section-heading sticky-heading">
             <h2>排位与账本</h2>
-            <span class="muted">奖池 ¥25,000</span>
+            <div class="heading-actions">
+              <div class="scope-toggle" aria-label="榜单筛选">
+                <button class="scope-button is-active" type="button" data-view-scope="all">全部</button>
+                <button class="scope-button" type="button" data-view-scope="competitors">仅参赛</button>
+              </div>
+              <span class="muted">奖池 ¥25,000</span>
+            </div>
           </div>
           <div id="winner-card" class="winner-card"></div>
           <div id="payout-list" class="payout-list"></div>

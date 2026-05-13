@@ -15,6 +15,10 @@ const APP_CONFIG = window.LIMOS_CONFIG || {};
 const ADMIN_CODE_HASH = APP_CONFIG.adminCodeHash || "c2bbd6ff1f04663cf7622ac6a0597516daabd2c49f3e126869f1ee887f6aab85";
 const ROLE_MEMBER = "member";
 const ROLE_ADMIN = "admin";
+const USER_ROLE_COMPETITOR = "competitor";
+const USER_ROLE_SUPPORTER = "supporter";
+const VIEW_SCOPE_ALL = "all";
+const VIEW_SCOPE_COMPETITORS = "competitors";
 
 const PARTICIPANT_COLORS = [
   "#456cf6",
@@ -32,6 +36,8 @@ let state = getDefaultState();
 let pendingAvatar = "";
 let pendingProfileAvatar = "";
 let authMode = "login";
+let joinRole = USER_ROLE_COMPETITOR;
+let viewScope = VIEW_SCOPE_ALL;
 let toastTimer = 0;
 let remoteSyncTimer = 0;
 
@@ -41,6 +47,9 @@ const elements = {
   signupRoster: $("#signup-roster"),
   signupCount: $("#signup-count"),
   authTabs: $$("[data-auth-mode]"),
+  joinRoleButtons: $$("[data-join-role]"),
+  viewScopeButtons: $$("[data-view-scope]"),
+  adminEntryButton: $("#admin-entry-button"),
   loginFields: $("#login-fields"),
   registerFields: $("#register-fields"),
   adminFields: $("#admin-fields"),
@@ -77,6 +86,7 @@ const elements = {
   dashboardLeaderboard: $("#dashboard-leaderboard"),
   trendCanvas: $("#trend-canvas"),
   trendLegend: $("#trend-legend"),
+  activityHeatmap: $("#activity-heatmap"),
   chartRangeLabel: $("#chart-range-label"),
   winnerCard: $("#winner-card"),
   payoutList: $("#payout-list"),
@@ -137,6 +147,13 @@ function bindEvents() {
   elements.authTabs.forEach((button) => {
     button.addEventListener("click", () => setAuthMode(button.dataset.authMode));
   });
+  elements.joinRoleButtons.forEach((button) => {
+    button.addEventListener("click", () => setJoinRole(button.dataset.joinRole));
+  });
+  elements.viewScopeButtons.forEach((button) => {
+    button.addEventListener("click", () => setViewScope(button.dataset.viewScope));
+  });
+  elements.adminEntryButton.addEventListener("click", () => setAuthMode("admin"));
 
   $$("[data-nav]").forEach((button) => {
     button.addEventListener("click", () => navigate(button.dataset.nav));
@@ -224,9 +241,10 @@ function normalizeState(nextState) {
   const fallback = getDefaultState();
   const session = loadSession();
   const participants = Array.isArray(nextState?.participants)
-    ? nextState.participants.slice(0, ACTIVITY.maxParticipants).map(normalizeParticipant)
+    ? nextState.participants.map(normalizeParticipant)
     : [];
-  const status = participants.length >= ACTIVITY.maxParticipants ? "active" : "waiting";
+  const competitorCount = participants.filter(isCompetitor).length;
+  const status = competitorCount >= ACTIVITY.maxParticipants ? "active" : "waiting";
   const startedAt = status === "active"
     ? nextState?.competition?.startedAt || getTodayISO()
     : "";
@@ -251,10 +269,31 @@ function normalizeParticipant(participant, index = 0) {
     color: participant.color || PARTICIPANT_COLORS[index % PARTICIPANT_COLORS.length],
     initialWeight: Number(participant.initialWeight) || 0,
     avatar: participant.avatar || "",
+    userRole: normalizeUserRole(participant.userRole || participant.role),
     accessCodeHash: participant.accessCodeHash || "",
     joinedAt: participant.joinedAt || new Date().toISOString(),
     entries: Array.isArray(participant.entries) ? participant.entries : [],
   };
+}
+
+function normalizeUserRole(role) {
+  return role === USER_ROLE_SUPPORTER ? USER_ROLE_SUPPORTER : USER_ROLE_COMPETITOR;
+}
+
+function isCompetitor(participant) {
+  return normalizeUserRole(participant?.userRole || participant?.role) === USER_ROLE_COMPETITOR;
+}
+
+function isSupporter(participant) {
+  return normalizeUserRole(participant?.userRole || participant?.role) === USER_ROLE_SUPPORTER;
+}
+
+function getCompetitors() {
+  return state.participants.filter(isCompetitor);
+}
+
+function getSupporters() {
+  return state.participants.filter(isSupporter);
 }
 
 function createDataStore(config) {
@@ -358,11 +397,13 @@ function showApp() {
 }
 
 function renderOnboardingOptions() {
-  const filled = state.participants.length;
+  const competitors = getCompetitors();
+  const supporters = getSupporters();
+  const filled = competitors.length;
   const remaining = ACTIVITY.maxParticipants - filled;
-  elements.signupCount.textContent = remaining > 0 ? `还差 ${remaining} 位上车` : "5 席坐满，准备开局";
+  elements.signupCount.textContent = remaining > 0 ? `还差 ${remaining} 位参赛开局` : "参赛席位已满";
   elements.signupRoster.innerHTML = Array.from({ length: ACTIVITY.maxParticipants }, (_, index) => {
-    const participant = state.participants[index];
+    const participant = competitors[index];
     if (participant) {
       return `<span class="roster-seat is-filled">${avatarHtml(participant, "roster-avatar")}</span>`;
     }
@@ -370,7 +411,7 @@ function renderOnboardingOptions() {
   }).join("");
 
   elements.loginMember.innerHTML = state.participants.length
-    ? state.participants.map((participant) => `<option value="${escapeHtml(participant.id)}">${escapeHtml(participant.name)}</option>`).join("")
+    ? state.participants.map((participant) => `<option value="${escapeHtml(participant.id)}">${escapeHtml(participant.name)} · ${getRoleLabel(participant)}</option>`).join("")
     : `<option value="">还没有成员</option>`;
   elements.loginMember.disabled = !state.participants.length;
 
@@ -381,15 +422,23 @@ function renderOnboardingOptions() {
 
   const registerTab = elements.authTabs.find((button) => button.dataset.authMode === "register");
   if (registerTab) {
-    registerTab.disabled = state.participants.length >= ACTIVITY.maxParticipants;
+    registerTab.disabled = false;
   }
+
+  elements.joinRoleButtons.forEach((button) => {
+    const isCompetitorRole = button.dataset.joinRole === USER_ROLE_COMPETITOR;
+    button.disabled = isCompetitorRole && competitors.length >= ACTIVITY.maxParticipants;
+  });
+
+  if (joinRole === USER_ROLE_COMPETITOR && competitors.length >= ACTIVITY.maxParticipants) {
+    joinRole = USER_ROLE_SUPPORTER;
+  }
+  applyJoinRole();
 
   if (authMode === "login" && !state.participants.length) {
     authMode = "register";
   }
-  if (authMode === "register" && state.participants.length >= ACTIVITY.maxParticipants) {
-    authMode = "login";
-  }
+  elements.signupCount.title = supporters.length ? `${supporters.length} 位陪伴用户已加入` : "";
   applyAuthMode();
 }
 
@@ -409,6 +458,28 @@ function setAuthMode(mode) {
   applyAuthMode();
 }
 
+function setJoinRole(role) {
+  joinRole = normalizeUserRole(role);
+  applyJoinRole();
+}
+
+function applyJoinRole() {
+  elements.joinRoleButtons.forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.joinRole === joinRole);
+  });
+}
+
+function setViewScope(scope) {
+  viewScope = scope === VIEW_SCOPE_COMPETITORS ? VIEW_SCOPE_COMPETITORS : VIEW_SCOPE_ALL;
+  renderAll();
+}
+
+function applyViewScope() {
+  elements.viewScopeButtons.forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.viewScope === viewScope);
+  });
+}
+
 function applyAuthMode() {
   elements.authTabs.forEach((button) => {
     button.classList.toggle("auth-tab-active", button.dataset.authMode === authMode);
@@ -416,7 +487,8 @@ function applyAuthMode() {
   elements.loginFields.classList.toggle("hidden", authMode !== "login");
   elements.registerFields.classList.toggle("hidden", authMode !== "register");
   elements.adminFields.classList.toggle("hidden", authMode !== "admin");
-  elements.authSubmit.textContent = authMode === "register" ? "入队" : authMode === "admin" ? "旁观登录" : "登录";
+  elements.adminEntryButton.classList.toggle("hidden", authMode === "admin");
+  elements.authSubmit.textContent = authMode === "register" ? "加入" : authMode === "admin" ? "管理员登录" : "登录";
 }
 
 async function submitOnboarding(event) {
@@ -430,8 +502,9 @@ async function submitOnboarding(event) {
     return;
   }
 
-  if (state.participants.length >= ACTIVITY.maxParticipants) {
-    showToast("小队已经满员");
+  const userRole = joinRole;
+  if (userRole === USER_ROLE_COMPETITOR && getCompetitors().length >= ACTIVITY.maxParticipants) {
+    showToast("参赛席位已满，可以选择陪伴加入");
     return;
   }
 
@@ -473,6 +546,7 @@ async function submitOnboarding(event) {
     color: PARTICIPANT_COLORS[state.participants.length % PARTICIPANT_COLORS.length],
     initialWeight: round1(initialWeight),
     avatar: pendingAvatar,
+    userRole,
     accessCodeHash,
     joinedAt: new Date().toISOString(),
     entries: [],
@@ -491,7 +565,7 @@ async function submitOnboarding(event) {
 
   pendingAvatar = "";
   showApp();
-  showToast(isCompetitionActive() ? "5 人到齐，小瘦包开局" : "已入队，等大家上车");
+  showToast(userRole === USER_ROLE_SUPPORTER ? "已加入陪伴席" : isCompetitionActive() ? "5 位参赛到齐，小瘦包开局" : "已占参赛席，等大家上车");
 }
 
 async function loginMember() {
@@ -518,17 +592,17 @@ async function loginMember() {
 async function loginAdmin() {
   const adminCode = elements.adminCode.value.trim();
   if (!adminCode || !await verifyAccessCode(adminCode, ADMIN_CODE_HASH)) {
-    showToast("旁观码不对");
+    showToast("管理员码不对");
     return;
   }
 
   saveSession({ role: ROLE_ADMIN, participantId: "" });
   showApp();
-  showToast("管理员旁观模式");
+  showToast("管理员已登录");
 }
 
 function maybeStartCompetition() {
-  if (state.participants.length < ACTIVITY.maxParticipants || isCompetitionActive()) return;
+  if (getCompetitors().length < ACTIVITY.maxParticipants || isCompetitionActive()) return;
 
   const startedAt = getTodayISO();
   state.competition = {
@@ -536,7 +610,7 @@ function maybeStartCompetition() {
     startedAt,
     maxParticipants: ACTIVITY.maxParticipants,
   };
-  state.participants.forEach((participant) => {
+  getCompetitors().forEach((participant) => {
     if (!participant.entries.some((entry) => entry.date === startedAt)) {
       participant.entries.push({
         date: startedAt,
@@ -549,7 +623,7 @@ function maybeStartCompetition() {
 }
 
 function isCompetitionActive() {
-  return state.competition?.status === "active" && state.participants.length >= ACTIVITY.maxParticipants;
+  return state.competition?.status === "active" && getCompetitors().length >= ACTIVITY.maxParticipants;
 }
 
 function getDraftParticipant() {
@@ -559,6 +633,7 @@ function getDraftParticipant() {
     color: PARTICIPANT_COLORS[state.participants.length % PARTICIPANT_COLORS.length],
     initialWeight: 0,
     avatar: pendingAvatar,
+    userRole: joinRole,
     entries: [],
   };
 }
@@ -566,14 +641,14 @@ function getDraftParticipant() {
 async function submitWeight(event) {
   event.preventDefault();
   if (!isMemberSession()) {
-    showToast("旁观账号不能记录体重");
+    showToast("管理员不能记录体重");
     return;
   }
   const participant = getCurrentUser();
   const weight = Number(elements.weightInput.value);
 
-  if (!isCompetitionActive()) {
-    showToast("5 人到齐后再上秤");
+  if (!isCompetitionActive() && isCompetitor(participant)) {
+    showToast("5 位参赛到齐后再上秤");
     return;
   }
 
@@ -600,7 +675,7 @@ async function submitWeight(event) {
 async function submitProfile(event) {
   event.preventDefault();
   if (!isMemberSession()) {
-    showToast("旁观账号不能修改资料");
+    showToast("管理员不能修改资料");
     return;
   }
   const participant = getCurrentUser();
@@ -723,7 +798,7 @@ async function removeParticipantAsAdmin(participantId) {
 
 function removeParticipantFromState(participantId) {
   state.participants = state.participants.filter((participant) => participant.id !== participantId);
-  if (state.participants.length < ACTIVITY.maxParticipants) {
+  if (getCompetitors().length < ACTIVITY.maxParticipants) {
     state.competition = {
       status: "waiting",
       startedAt: "",
@@ -738,6 +813,7 @@ function renderAll() {
     return;
   }
   const computed = getComputed();
+  applyViewScope();
   renderTopbar(computed);
   renderDashboard(computed);
   renderTrend(computed);
@@ -748,20 +824,20 @@ function renderAll() {
 function renderTopbar(computed) {
   if (isAdminSession()) {
     renderAvatar(elements.topbarAvatar, getAdminProfile(), "管");
-    elements.topbarName.textContent = "管理员旁观";
+    elements.topbarName.textContent = "管理员";
     elements.topbarStatus.textContent = isCompetitionActive()
-      ? `只读 · ${computed.results.length} 位成员`
-      : `只读 · 集结中 ${state.participants.length}/${ACTIVITY.maxParticipants}`;
+      ? `管理模式 · ${computed.competitorResults.length} 参赛 · ${getSupporters().length} 陪伴`
+      : `管理模式 · 参赛 ${getCompetitors().length}/${ACTIVITY.maxParticipants}`;
     return;
   }
 
   const current = getCurrentUser();
-  const result = computed.results.find((item) => item.id === current.id);
+  const result = computed.allResults.find((item) => item.id === current.id);
   renderAvatar(elements.topbarAvatar, current);
   elements.topbarName.textContent = current.name;
   elements.topbarStatus.textContent = isCompetitionActive()
-    ? `实时第 #${result.rank} · ${formatRate(result.lossRate)}`
-    : `小队集结中 · ${state.participants.length}/${ACTIVITY.maxParticipants}`;
+    ? `${getRoleLabel(current)} · ${getRankText(result)} · ${formatRate(result.lossRate)}`
+    : `${getRoleLabel(current)} · 参赛 ${getCompetitors().length}/${ACTIVITY.maxParticipants}`;
 }
 
 function renderDashboard(computed) {
@@ -771,23 +847,30 @@ function renderDashboard(computed) {
   }
 
   const current = getCurrentUser();
-  const result = computed.results.find((item) => item.id === current.id);
+  const result = computed.allResults.find((item) => item.id === current.id);
   const payout = computed.payouts[current.id];
   elements.dashboardRateLabel.textContent = "当前瘦身率";
-  elements.dashboardRankLabel.textContent = "小队排位";
+  elements.dashboardRankLabel.textContent = isCompetitor(current) ? "参赛排位" : "陪伴排位";
 
   if (!isCompetitionActive()) {
-    const remaining = ACTIVITY.maxParticipants - state.participants.length;
+    const remaining = ACTIVITY.maxParticipants - getCompetitors().length;
     setTeamAction("share");
     elements.daysLeft.textContent = "小队集结中";
-    elements.dashboardRank.textContent = `${state.participants.length}/${ACTIVITY.maxParticipants}`;
-    elements.dashboardRate.textContent = "--";
-    elements.dashboardRate.classList.remove("gain", "loss");
+    elements.dashboardRank.textContent = `${getCompetitors().length}/${ACTIVITY.maxParticipants}`;
+    elements.dashboardRate.textContent = isSupporter(current) ? formatRate(result.lossRate) : "--";
+    elements.dashboardRate.classList.toggle("gain", isSupporter(current) && result.lossRate < 0);
+    elements.dashboardRate.classList.toggle("loss", isSupporter(current) && result.lossRate >= 0);
     elements.dashboardMoneyLabel.textContent = "还差";
     elements.dashboardMoney.textContent = `${remaining} 位`;
-    elements.dashboardWeightDelta.textContent = `初始 ${formatNumber(current.initialWeight, 1)}kg 已锁定`;
-    elements.dashboardGap.textContent = "5 个席位坐满自动开局";
-    elements.weightForm.classList.add("hidden");
+    elements.dashboardWeightDelta.textContent = isSupporter(current)
+      ? `${formatSignedKg(result.deltaKg)} · 陪伴记录不参与结算`
+      : `初始 ${formatNumber(current.initialWeight, 1)}kg 已锁定`;
+    elements.dashboardGap.textContent = "5 位参赛成员坐满自动开局";
+    elements.weightForm.classList.toggle("hidden", isCompetitor(current));
+    const latest = getLatestEntry(current);
+    elements.lastEntryText.textContent = latest
+      ? `上次 ${formatDateShort(latest.date)} · ${formatNumber(latest.weight, 1)}kg`
+      : "陪伴用户可以先记录体重";
     elements.dashboardLeaderboard.innerHTML = waitingListHtml();
     return;
   }
@@ -796,16 +879,21 @@ function renderDashboard(computed) {
   elements.weightForm.classList.remove("hidden");
 
   elements.daysLeft.textContent = `剩余 ${daysBetween(getTodayISO(), ACTIVITY.endDate)} 天`;
-  elements.dashboardRank.textContent = result.rank;
+  elements.dashboardRank.textContent = isCompetitor(current) ? result.competitionRank : result.allRank;
   elements.dashboardRate.textContent = formatRate(result.lossRate);
   elements.dashboardRate.classList.toggle("gain", result.lossRate < 0);
   elements.dashboardRate.classList.toggle("loss", result.lossRate >= 0);
   elements.dashboardWeightDelta.textContent = `${formatSignedKg(result.deltaKg)} · 当前 ${formatNumber(result.currentWeight, 1)}kg`;
-  elements.dashboardGap.textContent = result.isLeader
+  elements.dashboardGap.textContent = isSupporter(current)
+    ? "陪伴用户不参与奖金结算"
+    : result.isLeader
     ? computed.leaders.length > 1 ? "并列领跑，等下一次破局" : "你在领跑"
     : `落后第一名 ${formatNumber(result.gapToLeader, 2)} 个百分点`;
 
-  if (payout.status === "win") {
+  if (isSupporter(current)) {
+    elements.dashboardMoneyLabel.textContent = "结算身份";
+    elements.dashboardMoney.textContent = "陪伴";
+  } else if (payout.status === "win") {
     elements.dashboardMoneyLabel.textContent = computed.leaders.length > 1 ? "并列领跑试算" : "今日可收";
     elements.dashboardMoney.textContent = `¥${formatMoney(payout.prize)}`;
   } else {
@@ -818,25 +906,25 @@ function renderDashboard(computed) {
     ? `上次 ${formatDateShort(latest.date)} · ${formatNumber(latest.weight, 1)}kg`
     : "还没有上秤记录";
 
-  elements.dashboardLeaderboard.innerHTML = computed.results.slice(0, 5).map((item) => rankRowHtml(item, computed, true)).join("");
+  elements.dashboardLeaderboard.innerHTML = computed.displayResults.slice(0, 5).map((item) => rankRowHtml(item, computed, true)).join("");
 }
 
 function renderAdminDashboard(computed) {
   elements.weightForm.classList.add("hidden");
   elements.dashboardRateLabel.textContent = isCompetitionActive() ? "当前领跑" : "小队状态";
-  elements.dashboardRankLabel.textContent = "成员数";
-  elements.dashboardRank.textContent = `${state.participants.length}/${ACTIVITY.maxParticipants}`;
+  elements.dashboardRankLabel.textContent = "参赛席位";
+  elements.dashboardRank.textContent = `${getCompetitors().length}/${ACTIVITY.maxParticipants}`;
 
   if (!isCompetitionActive()) {
-    const remaining = ACTIVITY.maxParticipants - state.participants.length;
+    const remaining = ACTIVITY.maxParticipants - getCompetitors().length;
     setTeamAction("share");
     elements.daysLeft.textContent = "小队集结中";
     elements.dashboardRate.textContent = "--";
     elements.dashboardRate.classList.remove("gain", "loss");
     elements.dashboardMoneyLabel.textContent = "还差";
     elements.dashboardMoney.textContent = `${remaining} 位`;
-    elements.dashboardWeightDelta.textContent = "管理员只读旁观";
-    elements.dashboardGap.textContent = "成员到齐后自动开局";
+    elements.dashboardWeightDelta.textContent = "管理员不参与比赛";
+    elements.dashboardGap.textContent = "参赛成员到齐后自动开局";
     elements.dashboardLeaderboard.innerHTML = waitingListHtml();
     return;
   }
@@ -851,7 +939,7 @@ function renderAdminDashboard(computed) {
   elements.dashboardMoney.textContent = `¥${formatMoney(computed.payouts[leader.id].prize)}`;
   elements.dashboardWeightDelta.textContent = `当前领跑：${computed.leaders.map((item) => item.name).join("、")}`;
   elements.dashboardGap.textContent = "只读模式，不能记录体重";
-  elements.dashboardLeaderboard.innerHTML = computed.results.slice(0, 5).map((item) => rankRowHtml(item, computed, true)).join("");
+  elements.dashboardLeaderboard.innerHTML = computed.displayResults.slice(0, 5).map((item) => rankRowHtml(item, computed, true)).join("");
 }
 
 function renderTrend(computed) {
@@ -859,6 +947,7 @@ function renderTrend(computed) {
     elements.chartRangeLabel.textContent = "小队集结中";
     drawTrendChart(computed);
     elements.trendLegend.innerHTML = waitingListHtml();
+    renderHeatmap(computed);
     return;
   }
 
@@ -867,17 +956,19 @@ function renderTrend(computed) {
     ? `${timeline[1].label} 至 ${timeline.at(-1).label}`
     : "起始至今日";
   drawTrendChart(computed);
-  elements.trendLegend.innerHTML = computed.results
+  elements.trendLegend.innerHTML = computed.displayResults
     .map((item) => {
       const payout = computed.payouts[item.id];
-      const moneyText = payout.status === "win" ? `预计得 ¥${formatMoney(payout.prize)}` : `预计付 ¥${formatMoney(payout.pay)}`;
+      const moneyText = isSupporter(item)
+        ? "陪伴不结算"
+        : payout.status === "win" ? `预计得 ¥${formatMoney(payout.prize)}` : `预计付 ¥${formatMoney(payout.pay)}`;
       return `
         <div class="legend-row ${item.id === state.currentUserId ? "is-me" : ""}">
           <div class="legend-left">
             <span class="color-dot" style="background:${item.color}"></span>
             ${avatarHtml(item, "avatar-sm")}
             <div>
-              <p class="rank-name">${escapeHtml(item.name)}</p>
+              <p class="rank-name">${escapeHtml(item.name)}${roleBadgeHtml(item)}</p>
               <p class="rank-sub">${formatSignedKg(item.deltaKg)} · ${moneyText}</p>
             </div>
           </div>
@@ -886,6 +977,7 @@ function renderTrend(computed) {
       `;
     })
     .join("");
+  renderHeatmap(computed);
 }
 
 function renderRankPage(computed) {
@@ -893,10 +985,10 @@ function renderRankPage(computed) {
     elements.winnerCard.innerHTML = `
       <div class="winner-title">
         <span>组队中</span>
-        <strong>${state.participants.length}/${ACTIVITY.maxParticipants}</strong>
+        <strong>${getCompetitors().length}/${ACTIVITY.maxParticipants}</strong>
       </div>
       <h2>小瘦包还在组队</h2>
-      <p class="muted">第 5 位成员入队后，系统会锁定初始体重并自动开局。</p>
+      <p class="muted">第 5 位参赛成员入队后，系统会锁定初始体重并自动开局。陪伴用户可以提前加入，但不占参赛席。</p>
     `;
     elements.payoutList.innerHTML = "";
     elements.rankList.innerHTML = waitingListHtml();
@@ -914,14 +1006,14 @@ function renderRankPage(computed) {
     <p class="muted">${computed.leaders.length > 1 ? "今天如果收官，领跑者暂按平分奖池试算。" : "今天如果收官，领跑者拿走全部奖池。"}</p>
   `;
 
-  elements.payoutList.innerHTML = computed.results
+  elements.payoutList.innerHTML = computed.competitorResults
     .map((item) => {
       const payout = computed.payouts[item.id];
       const isWin = payout.status === "win";
       return `
         <div class="payout-row ${isWin ? "pay-win" : ""}">
           <div>
-            <p><strong class="rank-name">${escapeHtml(item.name)}</strong></p>
+            <p><strong class="rank-name">${escapeHtml(item.name)}${roleBadgeHtml(item)}</strong></p>
             <p class="pay-sub">${isWin ? "今日可收" : `落后 ${formatNumber(item.gapToLeader, 2)} 个百分点`}</p>
           </div>
           <strong>${isWin ? "+" : "-"}¥${formatMoney(isWin ? payout.prize : payout.pay)}</strong>
@@ -930,31 +1022,31 @@ function renderRankPage(computed) {
     })
     .join("");
 
-  elements.rankList.innerHTML = computed.results.map((item) => rankRowHtml(item, computed, false)).join("");
+  elements.rankList.innerHTML = computed.displayResults.map((item) => rankRowHtml(item, computed, false)).join("");
 }
 
 function renderProfile(computed) {
   if (isAdminSession()) {
     const adminProfile = getAdminProfile();
     renderAvatar(elements.profileAvatar, adminProfile, "管");
-    elements.profileName.textContent = "管理员旁观";
+    elements.profileName.textContent = "管理员";
     elements.profileSummary.textContent = isCompetitionActive()
-      ? `只读模式 · ${computed.results.length} 位成员 · 剩余 ${daysBetween(getTodayISO(), ACTIVITY.endDate)} 天`
-      : `只读模式 · 还差 ${ACTIVITY.maxParticipants - state.participants.length} 位开局`;
+      ? `管理模式 · ${computed.competitorResults.length} 位参赛 · 剩余 ${daysBetween(getTodayISO(), ACTIVITY.endDate)} 天`
+      : `管理模式 · 还差 ${ACTIVITY.maxParticipants - getCompetitors().length} 位参赛开局`;
     elements.profileForm.classList.add("hidden");
-    elements.historyList.innerHTML = `<p class="muted">旁观账号不能记录体重或修改成员资料。</p>`;
+    elements.historyList.innerHTML = `<p class="muted">管理员不能记录体重，只负责查看和维护成员。</p>`;
     return;
   }
 
   elements.profileForm.classList.remove("hidden");
   const current = getCurrentUser();
-  const result = computed.results.find((item) => item.id === current.id);
+  const result = computed.allResults.find((item) => item.id === current.id);
   elements.leaveTeamButton.classList.toggle("hidden", isCompetitionActive());
   renderAvatar(elements.profileAvatar, current);
   elements.profileName.textContent = current.name;
   elements.profileSummary.textContent = isCompetitionActive()
-    ? `初始 ${formatNumber(current.initialWeight, 1)}kg · 当前 ${formatNumber(result.currentWeight, 1)}kg · ${formatRate(result.lossRate)}`
-    : `初始 ${formatNumber(current.initialWeight, 1)}kg · 还差 ${ACTIVITY.maxParticipants - state.participants.length} 位开局`;
+    ? `${getRoleLabel(current)} · 初始 ${formatNumber(current.initialWeight, 1)}kg · 当前 ${formatNumber(result.currentWeight, 1)}kg · ${formatRate(result.lossRate)}`
+    : `${getRoleLabel(current)} · 初始 ${formatNumber(current.initialWeight, 1)}kg · 还差 ${ACTIVITY.maxParticipants - getCompetitors().length} 位参赛开局`;
   elements.profileNameInput.value = current.name;
   renderAvatar(elements.profileAvatarPreview, current);
 
@@ -1100,32 +1192,68 @@ function getComputed() {
     };
   });
 
-  const sorted = base.sort((a, b) => {
-    if (b.lossRate !== a.lossRate) return b.lossRate - a.lossRate;
-    return b.deltaKg - a.deltaKg;
+  const allResults = sortResults(base);
+  const competitorResults = sortResults(base.filter(isCompetitor));
+
+  allResults.forEach((item, index) => {
+    item.allRank = index + 1;
+  });
+  competitorResults.forEach((item, index) => {
+    item.competitionRank = index + 1;
   });
 
-  sorted.forEach((item, index) => {
-    item.rank = index + 1;
-  });
-
-  const leaderRate = sorted[0]?.lossRate ?? 0;
-  const leaders = sorted.filter((item) => nearlyEqual(item.lossRate, leaderRate));
-  sorted.forEach((item) => {
+  const leaderRate = competitorResults[0]?.lossRate ?? 0;
+  const leaders = competitorResults.filter((item) => nearlyEqual(item.lossRate, leaderRate));
+  competitorResults.forEach((item) => {
     item.isLeader = leaders.some((leader) => leader.id === item.id);
     item.gapToLeader = round2(Math.max(0, leaderRate - item.lossRate));
   });
+  allResults.forEach((item) => {
+    if (!isCompetitor(item)) {
+      item.isLeader = false;
+      item.gapToLeader = 0;
+    }
+  });
 
   return {
-    results: sorted,
+    allResults,
+    competitorResults,
+    displayResults: viewScope === VIEW_SCOPE_COMPETITORS ? competitorResults : allResults,
     leaders,
-    payouts: computePayouts(sorted, leaders),
+    payouts: computePayouts(competitorResults, leaders),
   };
 }
 
+function sortResults(results) {
+  return [...results].sort((a, b) => {
+    if (b.lossRate !== a.lossRate) return b.lossRate - a.lossRate;
+    return b.deltaKg - a.deltaKg;
+  });
+}
+
+function getRankNumber(item) {
+  return viewScope === VIEW_SCOPE_COMPETITORS ? item.competitionRank || "--" : item.allRank || "--";
+}
+
+function getRankText(item) {
+  if (isCompetitor(item)) return `参赛 #${item.competitionRank || "--"}`;
+  return `全部 #${item.allRank || "--"}`;
+}
+
+function getRoleLabel(participant) {
+  return isSupporter(participant) ? "陪伴" : "参赛";
+}
+
+function roleBadgeHtml(participant) {
+  const supporter = isSupporter(participant);
+  return `<span class="role-badge ${supporter ? "supporter" : "competitor"}">${supporter ? "陪伴" : "参赛"}</span>`;
+}
+
 function waitingListHtml() {
-  const slots = Array.from({ length: ACTIVITY.maxParticipants }, (_, index) => state.participants[index] || null);
-  return slots.map((participant, index) => {
+  const competitors = getCompetitors();
+  const supporters = viewScope === VIEW_SCOPE_COMPETITORS ? [] : getSupporters();
+  const slots = Array.from({ length: ACTIVITY.maxParticipants }, (_, index) => competitors[index] || null);
+  const competitorRows = slots.map((participant, index) => {
     if (!participant) {
       return `
         <div class="rank-row waiting-slot">
@@ -1134,7 +1262,7 @@ function waitingListHtml() {
             <span class="avatar avatar-sm empty-avatar">+</span>
             <div>
               <p class="rank-name">空席位</p>
-              <p class="rank-sub">等待成员入队</p>
+              <p class="rank-sub">等待参赛成员入队</p>
             </div>
           </div>
           <div class="rank-metric">
@@ -1159,7 +1287,7 @@ function waitingListHtml() {
           ${avatarHtml(participant, "avatar-sm")}
           <div>
             <p class="rank-name">${escapeHtml(participant.name)}${participant.id === state.currentUserId ? " · 我" : ""}</p>
-            <p class="rank-sub">初始 ${formatNumber(participant.initialWeight, 1)}kg · 已占位</p>
+            <p class="rank-sub">初始 ${formatNumber(participant.initialWeight, 1)}kg · 参赛席</p>
           </div>
         </div>
         <div class="rank-metric">
@@ -1168,6 +1296,32 @@ function waitingListHtml() {
       </div>
     `;
   }).join("");
+
+  const supporterRows = supporters.map((participant) => {
+    const rosterActionHtml = isAdminSession() && !isCompetitionActive()
+      ? `<button class="mini-danger-button" type="button" data-remove-participant="${escapeHtml(participant.id)}">移除</button>`
+      : `
+          <strong>陪伴</strong>
+          <small>不结算</small>
+        `;
+    return `
+      <div class="rank-row ${participant.id === state.currentUserId ? "is-me" : ""}">
+        <div class="rank-left">
+          <span class="rank-index">陪</span>
+          ${avatarHtml(participant, "avatar-sm")}
+          <div>
+            <p class="rank-name">${escapeHtml(participant.name)}${participant.id === state.currentUserId ? " · 我" : ""}${roleBadgeHtml(participant)}</p>
+            <p class="rank-sub">初始 ${formatNumber(participant.initialWeight, 1)}kg · 陪伴记录</p>
+          </div>
+        </div>
+        <div class="rank-metric">
+          ${rosterActionHtml}
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  return `${competitorRows}${supporterRows}`;
 }
 
 function computePayouts(results, leaders) {
@@ -1208,7 +1362,9 @@ function computePayouts(results, leaders) {
 
 function rankRowHtml(item, computed, compact) {
   const payout = computed.payouts[item.id];
-  const moneyText = payout.status === "win" ? `得 ¥${formatMoney(payout.prize)}` : `付 ¥${formatMoney(payout.pay)}`;
+  const moneyText = isSupporter(item)
+    ? "陪伴不结算"
+    : payout.status === "win" ? `得 ¥${formatMoney(payout.prize)}` : `付 ¥${formatMoney(payout.pay)}`;
   const rowClasses = [
     "rank-row",
     item.id === state.currentUserId ? "is-me" : "",
@@ -1217,10 +1373,10 @@ function rankRowHtml(item, computed, compact) {
   return `
     <div class="${rowClasses}">
       <div class="rank-left">
-        <span class="rank-index">${item.rank}</span>
+        <span class="rank-index">${getRankNumber(item)}</span>
         ${avatarHtml(item, compact ? "avatar-sm" : "avatar-md")}
         <div>
-          <p class="rank-name">${escapeHtml(item.name)}${item.id === state.currentUserId ? " · 我" : ""}</p>
+          <p class="rank-name">${escapeHtml(item.name)}${item.id === state.currentUserId ? " · 我" : ""}${roleBadgeHtml(item)}</p>
           <p class="rank-sub">${formatSignedKg(item.deltaKg)} · ${compact ? moneyText : `当前 ${formatNumber(item.currentWeight, 1)}kg`}</p>
         </div>
       </div>
@@ -1230,6 +1386,37 @@ function rankRowHtml(item, computed, compact) {
       </div>
     </div>
   `;
+}
+
+function renderHeatmap(computed) {
+  const results = computed.displayResults;
+  if (!elements.activityHeatmap) return;
+  if (!results.length) {
+    elements.activityHeatmap.innerHTML = `<p class="muted">当前筛选下还没有成员。</p>`;
+    return;
+  }
+
+  const days = getRecentDays(14);
+  elements.activityHeatmap.innerHTML = results.map((item) => {
+    const entryDates = new Set(item.entries.map((entry) => entry.date));
+    const cells = days.map((day) => {
+      const classes = [
+        "heatmap-cell",
+        entryDates.has(day.date) ? "is-on" : "",
+        day.date === getTodayISO() ? "is-today" : "",
+      ].filter(Boolean).join(" ");
+      return `<span class="${classes}" title="${day.label}${entryDates.has(day.date) ? " 已记录" : " 未记录"}"></span>`;
+    }).join("");
+    return `
+      <div class="heatmap-row ${item.id === state.currentUserId ? "is-me" : ""}">
+        <div class="heatmap-name">
+          <strong>${escapeHtml(item.name)}${roleBadgeHtml(item)}</strong>
+          <small>${formatSignedKg(item.deltaKg)} · ${formatRate(item.lossRate)}</small>
+        </div>
+        <div class="heatmap-cells" aria-label="${escapeHtml(item.name)} 最近 14 天记录">${cells}</div>
+      </div>
+    `;
+  }).join("");
 }
 
 function drawTrendChart(computed) {
@@ -1254,7 +1441,7 @@ function drawTrendChart(computed) {
   }
 
   const timeline = getTimeline();
-  const series = computed.results.map((participant) => ({
+  const series = computed.displayResults.map((participant) => ({
     ...participant,
     points: timeline.map((tick) => calculateLossRate(participant.initialWeight, getWeightAtTick(participant, tick))),
   }));
@@ -1345,7 +1532,8 @@ function drawTrendChart(computed) {
 
 function getTimeline() {
   const dates = new Set([getTodayISO()]);
-  state.participants.forEach((participant) => {
+  const source = viewScope === VIEW_SCOPE_COMPETITORS ? getCompetitors() : state.participants;
+  source.forEach((participant) => {
     participant.entries.forEach((entry) => dates.add(entry.date));
   });
 
@@ -1557,6 +1745,26 @@ function getTodayISO() {
   const today = formatter.format(new Date());
   if (today > ACTIVITY.endDate) return ACTIVITY.endDate;
   return today;
+}
+
+function getRecentDays(count) {
+  const formatter = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const today = new Date(`${getTodayISO()}T00:00:00+08:00`);
+  const todayIso = getTodayISO();
+  return Array.from({ length: count }, (_, index) => {
+    const date = new Date(today);
+    date.setDate(today.getDate() - (count - 1 - index));
+    const iso = formatter.format(date);
+    return {
+      date: iso,
+      label: iso === todayIso ? "今日" : formatDateShort(iso),
+    };
+  });
 }
 
 function daysBetween(startIso, endIso) {
