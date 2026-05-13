@@ -237,6 +237,7 @@
                 <button class="scope-button" type="button" data-view-scope="competitors">仅参赛</button>
               </div>
               <span class="muted">奖池 ¥25,000</span>
+              <button id="ledger-help-button" class="ledger-help-button" type="button" aria-label="查看账本算法说明">?</button>
             </div>
           </div>
           <div id="winner-card" class="winner-card"></div>
@@ -298,6 +299,21 @@
           </button>
         </nav>
       </section>
+
+      <div id="ledger-help-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="ledger-help-title">
+        <section class="modal-panel ledger-help-modal">
+          <div class="modal-heading">
+            <h2 id="ledger-help-title">账本怎么算</h2>
+            <button id="ledger-help-close" class="modal-close-button" type="button" aria-label="关闭账本说明">×</button>
+          </div>
+          <div class="ledger-help-copy">
+            <p><strong>只算参赛成员。</strong>陪伴用户可以记录体重、看曲线和排名，但不参与奖金分配。</p>
+            <p><strong>先算瘦身率。</strong>瘦身率 = (初始体重 - 当前体重) / 初始体重。</p>
+            <p><strong>赢家拿奖池。</strong>9 月 30 日瘦身率最高者赢得奖池；如果并列第一，奖池平分。</p>
+            <p><strong>输家按差距付款。</strong>付款 = 本人与赢家的瘦身率差距 / 所有输家差距总和 × ¥25,000。</p>
+          </div>
+        </section>
+      </div>
 
       <div id="toast" class="toast" role="status" aria-live="polite"></div>
     </main>

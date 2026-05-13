@@ -90,6 +90,9 @@ const elements = {
   chartRangeLabel: $("#chart-range-label"),
   winnerCard: $("#winner-card"),
   payoutList: $("#payout-list"),
+  ledgerHelpButton: $("#ledger-help-button"),
+  ledgerHelpModal: $("#ledger-help-modal"),
+  ledgerHelpClose: $("#ledger-help-close"),
   rankList: $("#rank-list"),
   profileAvatar: $("#profile-avatar"),
   profileName: $("#profile-name"),
@@ -143,6 +146,11 @@ function bindEvents() {
   elements.logoutButton.addEventListener("click", logout);
   elements.teamActionButton.addEventListener("click", handleTeamAction);
   elements.copyInviteButton.addEventListener("click", handleCopyInviteLink);
+  elements.ledgerHelpButton.addEventListener("click", openLedgerHelp);
+  elements.ledgerHelpClose.addEventListener("click", closeLedgerHelp);
+  elements.ledgerHelpModal.addEventListener("click", (event) => {
+    if (event.target === elements.ledgerHelpModal) closeLedgerHelp();
+  });
   elements.mainApp.addEventListener("click", handleRosterActionClick);
   elements.authTabs.forEach((button) => {
     button.addEventListener("click", () => setAuthMode(button.dataset.authMode));
@@ -160,6 +168,21 @@ function bindEvents() {
   });
 
   window.addEventListener("resize", () => drawTrendChart(getComputed()));
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !elements.ledgerHelpModal.classList.contains("hidden")) {
+      closeLedgerHelp();
+    }
+  });
+}
+
+function openLedgerHelp() {
+  elements.ledgerHelpModal.classList.remove("hidden");
+  elements.ledgerHelpClose.focus();
+}
+
+function closeLedgerHelp() {
+  elements.ledgerHelpModal.classList.add("hidden");
+  elements.ledgerHelpButton.focus();
 }
 
 function getDefaultState() {
