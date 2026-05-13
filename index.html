@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Limos 小瘦包</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <svg class="icon-sprite" aria-hidden="true">
+      <symbol id="icon-home" viewBox="0 0 24 24">
+        <path d="M3 11.5 12 4l9 7.5" />
+        <path d="M5.5 10.5V20h13v-9.5" />
+        <path d="M9.5 20v-6h5v6" />
+      </symbol>
+      <symbol id="icon-trend" viewBox="0 0 24 24">
+        <path d="M4 18h16" />
+        <path d="M5 15l4-5 4 3 6-8" />
+        <path d="M19 5v5h-5" />
+      </symbol>
+      <symbol id="icon-rank" viewBox="0 0 24 24">
+        <path d="M8 21h8" />
+        <path d="M12 17v4" />
+        <path d="M7 4h10v5a5 5 0 0 1-10 0V4Z" />
+        <path d="M7 7H4a3 3 0 0 0 3 3" />
+        <path d="M17 7h3a3 3 0 0 1-3 3" />
+      </symbol>
+      <symbol id="icon-user" viewBox="0 0 24 24">
+        <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" />
+        <path d="M4.5 20a7.5 7.5 0 0 1 15 0" />
+      </symbol>
+      <symbol id="icon-logout" viewBox="0 0 24 24">
+        <path d="M10 5H6.5A2.5 2.5 0 0 0 4 7.5v9A2.5 2.5 0 0 0 6.5 19H10" />
+        <path d="M14 8l4 4-4 4" />
+        <path d="M18 12H9" />
+      </symbol>
+    </svg>
+    <main id="app" class="app-shell">
+      <section id="onboarding" class="screen screen-active onboarding-screen" aria-labelledby="onboarding-title">
+        <div class="brand-block">
+          <div class="brand-mark" aria-hidden="true">Li</div>
+          <div>
+            <p class="eyebrow">小瘦包 · 25,000 元奖池</p>
+            <h1 id="onboarding-title">Limos</h1>
+            <p class="brand-copy">5 人减重小队，满员开局。9 月 30 日按减重率结算，差距越大，承担越多。</p>
+          </div>
+        </div>
+
+        <form id="onboarding-form" class="panel login-panel">
+          <div class="signup-status">
+            <div id="signup-roster" class="signup-roster" aria-label="小队席位"></div>
+            <span id="signup-count">还差 5 位上车</span>
+            <strong>占一个小瘦包席位</strong>
+            <small>上传头像和初始体重。5 个席位坐满后自动开局。</small>
+          </div>
+
+          <div class="auth-tabs" role="tablist" aria-label="登录方式">
+            <button class="auth-tab auth-tab-active" type="button" data-auth-mode="login">成员登录</button>
+            <button class="auth-tab" type="button" data-auth-mode="register">首次入队</button>
+            <button class="auth-tab" type="button" data-auth-mode="admin">管理员旁观</button>
+          </div>
+
+          <div id="login-fields" class="auth-panel">
+            <label class="field-label" for="login-member">选择你的名字</label>
+            <select id="login-member" class="input"></select>
+
+            <label class="field-label field-block" for="login-code">
+              登录码
+              <input id="login-code" class="input" type="password" autocomplete="current-password" maxlength="20" />
+            </label>
+            <p class="form-note">登录后只能记录自己的体重。</p>
+          </div>
+
+          <div id="register-fields" class="auth-panel hidden">
+            <label class="field-label" for="display-name">怎么称呼你</label>
+            <input id="display-name" class="input" type="text" autocomplete="nickname" maxlength="12" />
+
+            <label class="field-label field-block" for="initial-weight">
+              初始体重 kg
+              <input id="initial-weight" class="input" type="text" inputmode="decimal" autocomplete="off" />
+            </label>
+
+            <label class="field-label field-block" for="access-code">
+              设置登录码
+              <input id="access-code" class="input" type="password" autocomplete="new-password" maxlength="20" />
+            </label>
+            <p class="form-note">6-20 个字符。以后换手机登录也靠它。</p>
+
+            <label class="avatar-picker" for="avatar-input">
+              <span id="avatar-preview" class="avatar avatar-xl">我</span>
+              <span>
+                <strong>放上你的头像</strong>
+                <small>必填。大家会在排位、曲线和账本里看到它。</small>
+              </span>
+            </label>
+            <input id="avatar-input" class="visually-hidden" type="file" accept="image/*" />
+          </div>
+
+          <div id="admin-fields" class="auth-panel hidden">
+            <label class="field-label" for="admin-code">管理员旁观码</label>
+            <input id="admin-code" class="input" type="password" autocomplete="current-password" />
+            <p class="form-note">旁观账号只能看全局战况，不能记录体重或修改成员资料。</p>
+          </div>
+
+          <button id="auth-submit" class="primary-button" type="submit">登录</button>
+        </form>
+      </section>
+
+      <section id="main-app" class="main-app hidden">
+        <header class="topbar">
+          <div class="topbar-user">
+            <div id="topbar-avatar" class="avatar avatar-sm"></div>
+            <div>
+              <p id="topbar-name" class="topbar-name">--</p>
+              <p id="topbar-status" class="topbar-status">--</p>
+            </div>
+          </div>
+          <button id="logout-button" class="ghost-icon-button" type="button" aria-label="退出登录">
+            <svg class="button-icon" aria-hidden="true"><use href="#icon-logout"></use></svg>
+          </button>
+        </header>
+
+        <section id="page-dashboard" class="page page-active">
+          <div class="hero-panel">
+            <div class="hero-meta">
+              <span id="days-left" class="pill">剩余 -- 天</span>
+              <span class="pill pill-light">9 月 30 日收官</span>
+            </div>
+            <div class="hero-main">
+              <div>
+                <p id="dashboard-rate-label" class="metric-label">当前瘦身率</p>
+                <p id="dashboard-rate" class="rate-line">--%</p>
+              </div>
+              <div class="rank-card">
+                <p id="dashboard-rank-label" class="metric-label">小队排位</p>
+                <p class="rank-line">No.<span id="dashboard-rank">--</span></p>
+              </div>
+            </div>
+            <div class="money-strip">
+              <p id="dashboard-money-label">今日账本</p>
+              <strong id="dashboard-money">--</strong>
+            </div>
+            <div class="hero-detail">
+              <span id="dashboard-weight-delta">--</span>
+              <span id="dashboard-gap">--</span>
+            </div>
+          </div>
+
+          <form id="weight-form" class="panel weight-panel">
+            <div>
+              <h2>今天上秤</h2>
+              <p id="last-entry-text" class="muted">--</p>
+            </div>
+            <div class="weight-input-row">
+              <input id="weight-input" class="weight-input" type="text" inputmode="decimal" autocomplete="off" placeholder="0.0" />
+              <span>kg</span>
+            </div>
+            <button class="secondary-button" type="submit">更新体重</button>
+          </form>
+
+          <section class="section-block">
+            <div class="section-heading">
+              <h2>小队战况</h2>
+              <button id="team-action-button" class="text-button" type="button">邀请成员</button>
+            </div>
+            <div id="invite-panel" class="invite-panel hidden">
+              <div>
+                <strong>小队邀请链接</strong>
+                <small>发给下一位成员，注册后会自动占位。</small>
+              </div>
+              <div class="invite-link-row">
+                <input id="invite-link" class="input invite-link-input" type="text" readonly />
+                <button id="copy-invite-button" class="text-button" type="button">复制</button>
+              </div>
+            </div>
+            <div id="dashboard-leaderboard" class="list-stack"></div>
+          </section>
+        </section>
+
+        <section id="page-trend" class="page">
+          <div class="section-heading sticky-heading">
+            <h2>瘦身率走势</h2>
+            <span id="chart-range-label" class="muted">--</span>
+          </div>
+          <div class="chart-panel">
+            <canvas id="trend-canvas" aria-label="小瘦包成员减重率折线图"></canvas>
+          </div>
+          <div id="trend-legend" class="legend-list"></div>
+        </section>
+
+        <section id="page-rank" class="page">
+          <div class="section-heading sticky-heading">
+            <h2>排位与账本</h2>
+            <span class="muted">奖池 ¥25,000</span>
+          </div>
+          <div id="winner-card" class="winner-card"></div>
+          <div id="payout-list" class="payout-list"></div>
+          <div id="rank-list" class="list-stack"></div>
+        </section>
+
+        <section id="page-profile" class="page">
+          <div class="profile-header">
+            <div id="profile-avatar" class="avatar avatar-xl"></div>
+            <div>
+              <h2 id="profile-name">--</h2>
+              <p id="profile-summary" class="muted">--</p>
+            </div>
+          </div>
+
+          <form id="profile-form" class="panel profile-form">
+            <label class="field-label" for="profile-name-input">昵称</label>
+            <input id="profile-name-input" class="input" type="text" maxlength="12" />
+
+            <label class="avatar-picker compact" for="profile-avatar-input">
+              <span id="profile-avatar-preview" class="avatar avatar-md"></span>
+              <span>
+                <strong>更换头像</strong>
+                <small>会同步到排位和曲线里。</small>
+              </span>
+            </label>
+            <input id="profile-avatar-input" class="visually-hidden" type="file" accept="image/*" />
+
+            <button class="secondary-button" type="submit">保存更新</button>
+          </form>
+
+          <section class="section-block">
+            <div class="section-heading">
+              <h2>上秤记录</h2>
+              <button id="reset-button" class="danger-button" type="button">退出登录</button>
+            </div>
+            <div id="history-list" class="history-list"></div>
+          </section>
+        </section>
+
+        <nav class="bottom-nav" aria-label="主导航">
+          <button class="nav-button nav-active" type="button" data-nav="dashboard">
+            <svg class="nav-icon" aria-hidden="true"><use href="#icon-home"></use></svg>
+            <span>看板</span>
+          </button>
+          <button class="nav-button" type="button" data-nav="trend">
+            <svg class="nav-icon" aria-hidden="true"><use href="#icon-trend"></use></svg>
+            <span>曲线</span>
+          </button>
+          <button class="nav-button" type="button" data-nav="rank">
+            <svg class="nav-icon" aria-hidden="true"><use href="#icon-rank"></use></svg>
+            <span>账本</span>
+          </button>
+          <button class="nav-button" type="button" data-nav="profile">
+            <svg class="nav-icon" aria-hidden="true"><use href="#icon-user"></use></svg>
+            <span>账号</span>
+          </button>
+        </nav>
+      </section>
+
+      <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    </main>
+
+    <script src="./config.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>
