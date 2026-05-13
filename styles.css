@@ -1071,14 +1071,14 @@ select.input:hover {
 }
 
 .rank-row.is-leader {
-  border-color: rgba(184, 135, 45, 0.46);
+  border-color: rgba(216, 255, 79, 0.38);
   background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.82), rgba(255, 246, 221, 0.58)),
-    rgba(255, 253, 247, 0.7);
+    linear-gradient(145deg, rgba(255, 255, 255, 0.8), rgba(246, 248, 243, 0.5)),
+    rgba(255, 255, 255, 0.54);
   box-shadow:
-    inset 0 0 0 1px rgba(184, 135, 45, 0.12),
+    inset 0 0 0 1px rgba(216, 255, 79, 0.16),
     inset 0 1px 0 rgba(255, 255, 255, 0.82),
-    0 14px 30px rgba(184, 135, 45, 0.12);
+    0 14px 30px rgba(38, 52, 46, 0.09);
 }
 
 .rank-left {
@@ -1110,8 +1110,11 @@ select.input:hover {
 
 .rank-row.is-leader .rank-index {
   color: var(--ink);
-  background: var(--accent);
-  box-shadow: 0 6px 14px rgba(184, 135, 45, 0.18);
+  border: 1px solid rgba(216, 255, 79, 0.6);
+  background:
+    linear-gradient(180deg, rgba(216, 255, 79, 0.92), rgba(216, 255, 79, 0.64)),
+    rgba(216, 255, 79, 0.72);
+  box-shadow: 0 6px 14px rgba(80, 104, 30, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
 .rank-crown {
@@ -1121,8 +1124,8 @@ select.input:hover {
   z-index: 2;
   width: 17px;
   height: 17px;
-  color: var(--money);
-  fill: var(--money-soft);
+  color: #7d8f25;
+  fill: rgba(216, 255, 79, 0.36);
   stroke: currentColor;
   stroke-width: 1.8;
   stroke-linecap: round;

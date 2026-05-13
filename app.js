@@ -967,10 +967,10 @@ function renderDashboard(computed) {
     elements.dashboardMoneyLabel.textContent = "结算身份";
     elements.dashboardMoney.textContent = "陪伴";
   } else if (payout.status === "win") {
-    elements.dashboardMoneyLabel.textContent = computed.leaders.length > 1 ? "并列领跑试算" : "今日可收";
+    elements.dashboardMoneyLabel.textContent = computed.leaders.length > 1 ? "并列领跑试算" : "预计可收";
     elements.dashboardMoney.textContent = `¥${formatMoney(payout.prize)}`;
   } else {
-    elements.dashboardMoneyLabel.textContent = "今日应付";
+    elements.dashboardMoneyLabel.textContent = "预计应付";
     elements.dashboardMoney.textContent = `¥${formatMoney(payout.pay)}`;
   }
 
@@ -1087,7 +1087,7 @@ function renderRankPage(computed) {
         <div class="payout-row ${isWin ? "pay-win" : ""}">
           <div>
             <p><strong class="rank-name">${escapeHtml(item.name)}${roleBadgeHtml(item)}</strong></p>
-            <p class="pay-sub">${isWin ? "今日可收" : `落后 ${formatNumber(item.gapToLeader, 2)} 个百分点`}</p>
+            <p class="pay-sub">${isWin ? "预计可收" : `落后 ${formatNumber(item.gapToLeader, 2)} 个百分点`}</p>
           </div>
           <strong>${isWin ? "+" : "-"}¥${formatMoney(isWin ? payout.prize : payout.pay)}</strong>
         </div>
@@ -1449,7 +1449,7 @@ function rankRowHtml(item, computed, compact) {
   const payout = computed.payouts[item.id];
   const moneyText = isSupporter(item)
     ? "陪伴不结算"
-    : payout.status === "win" ? `得 ¥${formatMoney(payout.prize)}` : `付 ¥${formatMoney(payout.pay)}`;
+    : payout.status === "win" ? `预计得 ¥${formatMoney(payout.prize)}` : `预计付 ¥${formatMoney(payout.pay)}`;
   const rowClasses = [
     "rank-row",
     item.id === state.currentUserId ? "is-me" : "",
