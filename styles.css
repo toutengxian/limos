@@ -1207,6 +1207,10 @@ select.input {
   padding: 18px;
 }
 
+.profile-form .secondary-button + .danger-outline-button {
+  margin-top: 12px;
+}
+
 .history-list {
   display: grid;
   gap: 10px;
@@ -1246,8 +1250,10 @@ select.input {
 
 .nav-button {
   display: grid;
-  gap: 3px;
+  grid-template-rows: 24px 14px;
+  place-content: center;
   place-items: center;
+  gap: 4px;
   min-width: 0;
   height: 56px;
   border-radius: 18px;
@@ -1273,8 +1279,9 @@ select.input {
 }
 
 .nav-icon {
-  width: 22px;
-  height: 22px;
+  display: block;
+  width: 21px;
+  height: 21px;
 }
 
 .toast {
