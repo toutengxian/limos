@@ -18,6 +18,7 @@
 - 看板、曲线、上秤日历和排位支持“全部 / 仅参赛”筛选
 - 本地模式用于开发预览
 - Vercel API 代理 Supabase，用于真实多人同步
+- 可用 Node 单服务部署到腾讯云香港轻量/CVM，降低国内用户访问 Vercel 的不稳定性
 
 ## 本地预览
 
@@ -93,6 +94,16 @@ npm run deploy
 
 ```bash
 VERCEL_TOKEN=YOUR_TOKEN npx vercel --prod --yes --token YOUR_TOKEN
+```
+
+## 国内访问阶段 1
+
+如果用户在国内不翻墙访问 Vercel 很慢，可以先把同一套前端和 `/api/state` 迁到腾讯云香港轻量/CVM，Supabase 暂时保持不变。详见 [docs/mainland-stage1.md](./docs/mainland-stage1.md)。
+
+本仓库已提供通用 Node 服务入口：
+
+```bash
+LIMOS_ENV_FILE=.env.production npm start
 ```
 
 ## 开发与生产环境

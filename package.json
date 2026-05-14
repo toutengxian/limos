@@ -5,12 +5,14 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/check-environment.mjs && node scripts/write-config.mjs",
-    "check": "node --check app.js && node --check api/state.js && node --check scripts/write-config.mjs && node --check scripts/check-environment.mjs && node --check scripts/promote-production.mjs",
+    "check": "node --check app.js && node --check api/state.js && node --check server/node-server.mjs && node --check scripts/write-config.mjs && node --check scripts/check-environment.mjs && node --check scripts/promote-production.mjs && node --check scripts/start-node.mjs",
     "dev": "npx vercel dev --listen 5173",
     "deploy:dev": "npx vercel",
     "deploy:prod": "npx vercel --prod",
     "deploy": "npm run deploy:prod",
     "promote:prod": "node scripts/promote-production.mjs",
+    "start": "node scripts/start-node.mjs",
+    "start:node": "node scripts/start-node.mjs",
     "serve": "python3 -m http.server 5173 --bind 127.0.0.1"
   }
 }
