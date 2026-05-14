@@ -26,7 +26,40 @@
 - Nginx
 - 一个指向服务器公网 IP 的测试域名，例如 `hk.limos.best`
 
+服务器创建好之后，先在 DNS 里加一条测试域名：
+
+```text
+hk.limos.best -> A -> 腾讯云服务器公网 IP
+```
+
+腾讯云安全组需要放行：
+
+- TCP 22：SSH
+- TCP 80：HTTP 灰度验证
+- TCP 443：后续 HTTPS
+
 ## 部署代码
+
+推荐直接用安装脚本：
+
+```bash
+git clone https://github.com/toutengxian/limos.git /opt/limos
+cd /opt/limos
+git checkout develop
+DOMAIN=hk.limos.best bash deploy/tencent-hk/install.sh
+```
+
+第一次运行时，脚本会创建 `/opt/limos/.env.production.example` 并停下来。复制成真实 env：
+
+```bash
+cp /opt/limos/.env.production.example /opt/limos/.env.production
+nano /opt/limos/.env.production
+DOMAIN=hk.limos.best bash /opt/limos/deploy/tencent-hk/install.sh
+```
+
+脚本会安装 Node.js 20、Git、Nginx，配置 systemd，并把 Nginx 反代到本机 `3000` 端口。
+
+也可以手动部署：
 
 ```bash
 git clone https://github.com/toutengxian/limos.git /opt/limos

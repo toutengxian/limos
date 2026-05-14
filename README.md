@@ -106,6 +106,12 @@ VERCEL_TOKEN=YOUR_TOKEN npx vercel --prod --yes --token YOUR_TOKEN
 LIMOS_ENV_FILE=.env.production npm start
 ```
 
+腾讯云香港灰度部署可以直接用：
+
+```bash
+DOMAIN=hk.limos.best bash deploy/tencent-hk/install.sh
+```
+
 ## 开发与生产环境
 
 开发环境和生产环境按分支、Vercel 环境变量、Supabase 项目三层隔离。详见 [docs/environments.md](./docs/environments.md)。
