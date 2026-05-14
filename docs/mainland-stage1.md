@@ -32,11 +32,13 @@
 hk.limos.best -> A -> 腾讯云服务器公网 IP
 ```
 
-腾讯云安全组需要放行：
+腾讯云防火墙需要放行 IPv4：
 
-- TCP 22：SSH
-- TCP 80：HTTP 灰度验证
-- TCP 443：后续 HTTPS
+- TCP 22，来源 `0.0.0.0/0`：SSH
+- TCP 80，来源 `0.0.0.0/0`：HTTP 灰度验证
+- TCP 443，来源 `0.0.0.0/0`：HTTPS
+
+如果控制台里显示“全部 IPv6 地址”，那只对 IPv6 生效。`hk.limos.best` 当前使用 IPv4 A 记录时，必须另外添加“全部 IPv4 地址”或 `0.0.0.0/0` 的 443 规则。
 
 ## 部署代码
 
@@ -158,7 +160,20 @@ nginx -t
 systemctl reload nginx
 ```
 
-需要 HTTPS 时，用腾讯云 SSL 证书或 `certbot` 给 `hk.limos.best` 签证书。
+## HTTPS
+
+确认腾讯云防火墙已经放行 TCP 443 IPv4 后，用 `certbot` 给测试域名签证书：
+
+```bash
+certbot --nginx --cert-name hk.limos.best -d hk.limos.best --key-type rsa --rsa-key-size 2048 --redirect
+```
+
+验证：
+
+```bash
+curl https://hk.limos.best/healthz
+curl -I https://hk.limos.best/
+```
 
 ## 灰度验证
 

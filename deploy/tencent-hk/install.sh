@@ -45,7 +45,7 @@ install_node_20() {
 
 install_base_packages() {
   apt-get update
-  apt-get install -y ca-certificates curl git nginx
+  apt-get install -y ca-certificates curl git nginx certbot python3-certbot-nginx
   install_node_20
 }
 
@@ -146,3 +146,5 @@ verify_local
 echo
 echo "Limos stage 1 server is running."
 echo "Open http://${DOMAIN}/healthz after DNS points ${DOMAIN} to this server."
+echo "For HTTPS, make sure Tencent Cloud firewall allows TCP 443 from 0.0.0.0/0, then run:"
+echo "certbot --nginx --cert-name ${DOMAIN} -d ${DOMAIN} --key-type rsa --rsa-key-size 2048 --redirect"
