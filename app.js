@@ -8,6 +8,7 @@ const ACTIVITY = {
 const STORAGE_KEY = "limos_state_v1";
 const SESSION_KEY = "limos_session_v1";
 const LEGACY_SESSION_KEY = "limos_current_user_id_v1";
+const API_CACHE_KEY = "limos_api_cache_v1";
 const REMOTE_SYNC_INTERVAL_MS = 15000;
 const AVATAR_SIZE_PX = 192;
 const AVATAR_QUALITY = 0.78;
@@ -271,6 +272,30 @@ function saveLocalState(nextState) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(localState));
 }
 
+function loadApiCacheMeta(config) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(API_CACHE_KEY));
+    if (saved?.stateId === config.stateId && saved?.endpoint === (config.apiEndpoint || "/api/state")) {
+      return {
+        etag: saved.etag || "",
+      };
+    }
+  } catch {
+    localStorage.removeItem(API_CACHE_KEY);
+  }
+
+  return { etag: "" };
+}
+
+function saveApiCacheMeta(config, etag) {
+  if (!etag) return;
+  localStorage.setItem(API_CACHE_KEY, JSON.stringify({
+    endpoint: config.apiEndpoint || "/api/state",
+    stateId: config.stateId || "",
+    etag,
+  }));
+}
+
 function normalizeState(nextState) {
   const fallback = getDefaultState();
   const session = loadSession();
@@ -387,19 +412,32 @@ function createApiStore(config) {
   const endpoint = config.apiEndpoint || "/api/state";
 
   async function requestState(options = {}) {
+    const method = options.method || "GET";
+    const apiCacheMeta = method === "GET" ? loadApiCacheMeta(config) : { etag: "" };
+    const headers = {
+      "Content-Type": "application/json",
+      ...options.headers,
+    };
+    if (method === "GET" && apiCacheMeta.etag) {
+      headers["If-None-Match"] = apiCacheMeta.etag;
+    }
+
     const response = await fetch(endpoint, {
       cache: "no-store",
       ...options,
-      headers: {
-        "Content-Type": "application/json",
-        ...options.headers,
-      },
+      headers,
     });
+
+    const responseEtag = response.headers.get("ETag") || "";
+    if (response.status === 304) {
+      return { payload: loadLocalState(), unchanged: true };
+    }
 
     if (!response.ok) {
       throw new Error(`State API failed: ${response.status}`);
     }
 
+    if (responseEtag) saveApiCacheMeta(config, responseEtag);
     return response.json();
   }
 

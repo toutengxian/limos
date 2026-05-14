@@ -1,4 +1,13 @@
+import { createHash } from "node:crypto";
+
 const TABLE_NAME = "fat_battle_state";
+const STATE_CACHE_TTL_MS = Number.parseInt(process.env.LIMOS_STATE_CACHE_TTL_MS || "5000", 10);
+let stateCache = {
+  cacheKey: "",
+  etag: "",
+  fetchedAt: 0,
+  payload: null,
+};
 
 function getEnvConfig() {
   return {
@@ -8,11 +17,21 @@ function getEnvConfig() {
   };
 }
 
-function json(response, statusCode, body) {
+function json(response, statusCode, body, headers = {}) {
   response.statusCode = statusCode;
   response.setHeader("Content-Type", "application/json; charset=utf-8");
-  response.setHeader("Cache-Control", "no-store");
+  response.setHeader("Cache-Control", headers["Cache-Control"] || "no-store");
+  Object.entries(headers).forEach(([key, value]) => {
+    if (key !== "Cache-Control") response.setHeader(key, value);
+  });
   response.end(JSON.stringify(body));
+}
+
+function notModified(response, etag) {
+  response.statusCode = 304;
+  response.setHeader("Cache-Control", "no-cache");
+  response.setHeader("ETag", etag);
+  response.end();
 }
 
 function getDefaultPayload() {
@@ -49,7 +68,31 @@ function createTableUrl(config, query = "") {
   return `${baseUrl}/rest/v1/${TABLE_NAME}${query}`;
 }
 
+function getCacheKey(config) {
+  return `${config.supabaseUrl}|${config.stateId}`;
+}
+
+function createPayloadEtag(payload) {
+  const hash = createHash("sha256").update(JSON.stringify(payload)).digest("base64url");
+  return `"${hash.slice(0, 32)}"`;
+}
+
+function updateStateCache(config, payload) {
+  stateCache = {
+    cacheKey: getCacheKey(config),
+    etag: createPayloadEtag(payload),
+    fetchedAt: Date.now(),
+    payload,
+  };
+}
+
 async function fetchState(config) {
+  const cacheKey = getCacheKey(config);
+  const cacheAge = Date.now() - stateCache.fetchedAt;
+  if (stateCache.cacheKey === cacheKey && stateCache.payload && cacheAge < STATE_CACHE_TTL_MS) {
+    return stateCache.payload;
+  }
+
   const query = `?id=eq.${encodeURIComponent(config.stateId)}&select=payload`;
   const response = await fetch(createTableUrl(config, query), {
     headers: createSupabaseHeaders(config),
@@ -60,7 +103,9 @@ async function fetchState(config) {
   }
 
   const rows = await response.json();
-  return rows[0]?.payload || null;
+  const payload = rows[0]?.payload || null;
+  if (payload) updateStateCache(config, payload);
+  return payload;
 }
 
 async function writeState(config, payload) {
@@ -80,6 +125,8 @@ async function writeState(config, payload) {
   if (!response.ok) {
     throw new Error(`Supabase write failed: ${response.status}`);
   }
+
+  updateStateCache(config, payload);
 }
 
 export default async function handler(request, response) {
@@ -94,13 +141,25 @@ export default async function handler(request, response) {
     if (request.method === "GET") {
       const payload = await fetchState(config);
       if (payload) {
-        json(response, 200, { payload });
+        const etag = createPayloadEtag(payload);
+        if (request.headers["if-none-match"] === etag) {
+          notModified(response, etag);
+          return;
+        }
+
+        json(response, 200, { payload }, {
+          "Cache-Control": "no-cache",
+          ETag: etag,
+        });
         return;
       }
 
       const defaultPayload = getDefaultPayload();
       await writeState(config, defaultPayload);
-      json(response, 200, { payload: defaultPayload });
+      json(response, 200, { payload: defaultPayload }, {
+        "Cache-Control": "no-cache",
+        ETag: createPayloadEtag(defaultPayload),
+      });
       return;
     }
 
@@ -112,7 +171,9 @@ export default async function handler(request, response) {
       }
 
       await writeState(config, body.payload);
-      json(response, 200, { ok: true });
+      json(response, 200, { ok: true }, {
+        ETag: createPayloadEtag(body.payload),
+      });
       return;
     }
 
