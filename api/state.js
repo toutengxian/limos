@@ -77,6 +77,41 @@ function createPayloadEtag(payload) {
   return `"${hash.slice(0, 32)}"`;
 }
 
+function stripPayloadAvatars(payload) {
+  return {
+    ...payload,
+    participants: Array.isArray(payload?.participants)
+      ? payload.participants.map(({ avatar, ...participant }) => participant)
+      : [],
+  };
+}
+
+function findParticipantAvatar(payload, participantId) {
+  const participant = Array.isArray(payload?.participants)
+    ? payload.participants.find((item) => item.id === participantId)
+    : null;
+  return participant?.avatar || "";
+}
+
+function mergePayloadForWrite(existingPayload, incomingPayload) {
+  const existingById = new Map(
+    (existingPayload?.participants || []).map((participant) => [participant.id, participant]),
+  );
+
+  return {
+    ...incomingPayload,
+    participants: Array.isArray(incomingPayload?.participants)
+      ? incomingPayload.participants.map((participant) => {
+        const existing = existingById.get(participant.id);
+        if (!participant.avatar && existing?.avatar) {
+          return { ...participant, avatar: existing.avatar };
+        }
+        return participant;
+      })
+      : [],
+  };
+}
+
 function updateStateCache(config, payload) {
   stateCache = {
     cacheKey: getCacheKey(config),
@@ -86,10 +121,10 @@ function updateStateCache(config, payload) {
   };
 }
 
-async function fetchState(config) {
+async function fetchState(config, options = {}) {
   const cacheKey = getCacheKey(config);
   const cacheAge = Date.now() - stateCache.fetchedAt;
-  if (stateCache.cacheKey === cacheKey && stateCache.payload && cacheAge < STATE_CACHE_TTL_MS) {
+  if (!options.forceFresh && stateCache.cacheKey === cacheKey && stateCache.payload && cacheAge < STATE_CACHE_TTL_MS) {
     return stateCache.payload;
   }
 
@@ -139,15 +174,34 @@ export default async function handler(request, response) {
 
   try {
     if (request.method === "GET") {
+      const requestUrl = new URL(request.url || "/", "http://localhost");
       const payload = await fetchState(config);
       if (payload) {
-        const etag = createPayloadEtag(payload);
+        const avatarParticipantId = requestUrl.searchParams.get("avatar");
+        if (avatarParticipantId) {
+          const avatar = findParticipantAvatar(payload, avatarParticipantId);
+          const avatarBody = { id: avatarParticipantId, avatar };
+          const avatarEtag = createPayloadEtag(avatarBody);
+          if (request.headers["if-none-match"] === avatarEtag) {
+            notModified(response, avatarEtag);
+            return;
+          }
+
+          json(response, avatar ? 200 : 404, avatarBody, {
+            "Cache-Control": "no-cache",
+            ETag: avatarEtag,
+          });
+          return;
+        }
+
+        const publicPayload = stripPayloadAvatars(payload);
+        const etag = createPayloadEtag(publicPayload);
         if (request.headers["if-none-match"] === etag) {
           notModified(response, etag);
           return;
         }
 
-        json(response, 200, { payload }, {
+        json(response, 200, { payload: publicPayload }, {
           "Cache-Control": "no-cache",
           ETag: etag,
         });
@@ -158,7 +212,7 @@ export default async function handler(request, response) {
       await writeState(config, defaultPayload);
       json(response, 200, { payload: defaultPayload }, {
         "Cache-Control": "no-cache",
-        ETag: createPayloadEtag(defaultPayload),
+        ETag: createPayloadEtag(stripPayloadAvatars(defaultPayload)),
       });
       return;
     }
@@ -170,9 +224,11 @@ export default async function handler(request, response) {
         return;
       }
 
-      await writeState(config, body.payload);
+      const existingPayload = await fetchState(config, { forceFresh: true });
+      const mergedPayload = mergePayloadForWrite(existingPayload, body.payload);
+      await writeState(config, mergedPayload);
       json(response, 200, { ok: true }, {
-        ETag: createPayloadEtag(body.payload),
+        ETag: createPayloadEtag(stripPayloadAvatars(mergedPayload)),
       });
       return;
     }

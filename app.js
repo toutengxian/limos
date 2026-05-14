@@ -43,9 +43,12 @@ let joinRole = USER_ROLE_COMPETITOR;
 let viewScope = VIEW_SCOPE_ALL;
 let toastTimer = 0;
 let remoteSyncTimer = 0;
+let avatarHydrationTimer = 0;
 let trendHoverIndex = null;
 let trendChartMeta = null;
 const avatarThemeColorCache = new Map();
+const avatarHydrationInFlight = new Set();
+const pendingAvatarUploadIds = new Set();
 
 const elements = {
   onboarding: $("#onboarding"),
@@ -133,6 +136,7 @@ async function init() {
     showOnboarding();
   }
 
+  queueAvatarHydration();
   startRemoteSync();
 }
 
@@ -296,6 +300,34 @@ function saveApiCacheMeta(config, etag) {
   }));
 }
 
+function mergeLocalAvatars(remoteState) {
+  const localState = loadLocalState();
+  const localAvatars = new Map(localState.participants
+    .filter((participant) => participant.avatar)
+    .map((participant) => [participant.id, participant.avatar]));
+
+  return {
+    ...remoteState,
+    participants: remoteState.participants.map((participant) => {
+      if (participant.avatar || !localAvatars.has(participant.id)) return participant;
+      return { ...participant, avatar: localAvatars.get(participant.id) };
+    }),
+  };
+}
+
+function createApiPayload(nextState) {
+  return {
+    competition: nextState.competition,
+    participants: nextState.participants.map((participant) => {
+      const { avatar, ...rest } = participant;
+      if (pendingAvatarUploadIds.has(participant.id) && avatar) {
+        return { ...rest, avatar };
+      }
+      return rest;
+    }),
+  };
+}
+
 function normalizeState(nextState) {
   const fallback = getDefaultState();
   const session = loadSession();
@@ -441,13 +473,32 @@ function createApiStore(config) {
     return response.json();
   }
 
+  async function requestAvatar(participantId) {
+    const avatarUrl = new URL(endpoint, window.location.href);
+    avatarUrl.searchParams.set("avatar", participantId);
+    const response = await fetch(avatarUrl.toString(), {
+      cache: "no-store",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (response.status === 404) return "";
+    if (!response.ok) {
+      throw new Error(`Avatar API failed: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data?.avatar || "";
+  }
+
   return {
     type: "api",
     async load() {
       try {
         const data = await requestState();
         if (data?.payload) {
-          const remoteState = normalizeState(data.payload);
+          const remoteState = mergeLocalAvatars(normalizeState(data.payload));
           saveLocalState(remoteState);
           return remoteState;
         }
@@ -460,15 +511,16 @@ function createApiStore(config) {
     async save(nextState) {
       const nextLocalState = normalizeState(nextState);
       saveLocalState(nextLocalState);
-
-      const payload = {
-        competition: nextLocalState.competition,
-        participants: nextLocalState.participants,
-      };
+      const syncedAvatarIds = [...pendingAvatarUploadIds];
+      const payload = createApiPayload(nextLocalState);
       await requestState({
         method: "PUT",
         body: JSON.stringify({ payload }),
       });
+      syncedAvatarIds.forEach((id) => pendingAvatarUploadIds.delete(id));
+    },
+    async loadAvatar(participantId) {
+      return requestAvatar(participantId);
     },
   };
 }
@@ -490,13 +542,51 @@ function startRemoteSync() {
     if (!elements.mainApp.classList.contains("hidden")) {
       renderAll();
     }
+    queueAvatarHydration();
   }, REMOTE_SYNC_INTERVAL_MS);
+}
+
+function queueAvatarHydration() {
+  if (dataStore.type !== "api" || typeof dataStore.loadAvatar !== "function") return;
+  window.clearTimeout(avatarHydrationTimer);
+  avatarHydrationTimer = window.setTimeout(() => {
+    hydrateMissingAvatars().catch((error) => console.error(error));
+  }, 200);
+}
+
+async function hydrateMissingAvatars() {
+  const targets = state.participants.filter((participant) => (
+    !participant.avatar && !avatarHydrationInFlight.has(participant.id)
+  ));
+  if (!targets.length) return;
+
+  for (const target of targets) {
+    avatarHydrationInFlight.add(target.id);
+    try {
+      const avatar = await dataStore.loadAvatar(target.id);
+      const participant = state.participants.find((item) => item.id === target.id);
+      if (participant && avatar && !participant.avatar) {
+        participant.avatar = avatar;
+        saveLocalState(state);
+        if (elements.mainApp.classList.contains("hidden")) {
+          renderOnboardingOptions();
+        } else {
+          renderAll();
+        }
+      }
+    } catch (error) {
+      console.error(error);
+    } finally {
+      avatarHydrationInFlight.delete(target.id);
+    }
+  }
 }
 
 function showOnboarding() {
   elements.onboarding.classList.add("screen-active");
   elements.mainApp.classList.add("hidden");
   hydrateOnboardingForm();
+  queueAvatarHydration();
 }
 
 function showApp() {
@@ -504,6 +594,7 @@ function showApp() {
   elements.mainApp.classList.remove("hidden");
   navigate("dashboard");
   renderAll();
+  queueAvatarHydration();
 }
 
 function renderOnboardingOptions() {
@@ -663,6 +754,7 @@ async function submitOnboarding(event) {
     entries: [],
   };
   state.participants.push(participant);
+  pendingAvatarUploadIds.add(participant.id);
   maybeStartCompetition();
   saveSession({ role: ROLE_MEMBER, participantId: participant.id });
   try {
@@ -814,6 +906,7 @@ async function submitProfile(event) {
   if (pendingProfileAvatar) {
     participant.avatar = pendingProfileAvatar;
     participant.color = pendingProfileAvatarColor || participant.color;
+    pendingAvatarUploadIds.add(participant.id);
   }
   try {
     await saveState();
