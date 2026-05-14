@@ -43,6 +43,8 @@ hk.limos.best -> A -> 腾讯云服务器公网 IP
 推荐直接用安装脚本：
 
 ```bash
+apt-get update
+apt-get install -y git
 git clone https://github.com/toutengxian/limos.git /opt/limos
 cd /opt/limos
 git checkout develop
