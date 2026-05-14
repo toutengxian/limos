@@ -31,9 +31,11 @@
 ```bash
 git clone https://github.com/toutengxian/limos.git /opt/limos
 cd /opt/limos
-git checkout main
+git checkout develop
 npm ci
 ```
+
+阶段 1 灰度先使用 `develop`。确认 `hk.limos.best` 稳定后，再把代码合并到 `main` 并切正式域名。
 
 创建 `/opt/limos/.env.production`：
 
