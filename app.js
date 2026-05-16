@@ -9,6 +9,7 @@ const STORAGE_KEY = "limos_state_v1";
 const SESSION_KEY = "limos_session_v1";
 const LEGACY_SESSION_KEY = "limos_current_user_id_v1";
 const API_CACHE_KEY = "limos_api_cache_v1";
+const MUTATION_QUEUE_KEY = "limos_mutation_queue_v1";
 const REMOTE_SYNC_INTERVAL_MS = 15000;
 const AVATAR_SIZE_PX = 192;
 const AVATAR_QUALITY = 0.78;
@@ -44,6 +45,7 @@ let viewScope = VIEW_SCOPE_ALL;
 let toastTimer = 0;
 let remoteSyncTimer = 0;
 let avatarHydrationTimer = 0;
+let mutationSyncInFlight = false;
 let trendHoverIndex = null;
 let trendChartMeta = null;
 const avatarThemeColorCache = new Map();
@@ -124,7 +126,7 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 async function init() {
-  state = await dataStore.load();
+  state = dataStore.loadLocal ? dataStore.loadLocal() : await dataStore.load();
   await refreshAvatarThemeColors();
   bindEvents();
   authMode = state.participants.length ? "login" : "register";
@@ -138,6 +140,7 @@ async function init() {
 
   queueAvatarHydration();
   startRemoteSync();
+  syncRemoteState({ render: true }).catch((error) => console.error(error));
 }
 
 function bindEvents() {
@@ -184,6 +187,9 @@ function bindEvents() {
   });
 
   window.addEventListener("resize", () => drawTrendChart(getComputed()));
+  window.addEventListener("online", () => {
+    drainMutationQueue({ notify: true, render: true }).catch((error) => console.error(error));
+  });
   window.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !elements.ledgerHelpModal.classList.contains("hidden")) {
       closeLedgerHelp();
@@ -328,6 +334,106 @@ function createApiPayload(nextState) {
   };
 }
 
+function loadMutationQueue() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(MUTATION_QUEUE_KEY));
+    return Array.isArray(saved) ? saved.filter((item) => item?.id && item?.type) : [];
+  } catch {
+    localStorage.removeItem(MUTATION_QUEUE_KEY);
+    return [];
+  }
+}
+
+function saveMutationQueue(queue) {
+  const normalizedQueue = Array.isArray(queue) ? queue.filter((item) => item?.id && item?.type) : [];
+  if (!normalizedQueue.length) {
+    localStorage.removeItem(MUTATION_QUEUE_KEY);
+    return;
+  }
+  localStorage.setItem(MUTATION_QUEUE_KEY, JSON.stringify(normalizedQueue));
+}
+
+function enqueueMutation(mutation) {
+  const queue = loadMutationQueue();
+  if (queue.some((item) => item.id === mutation.id)) return;
+  queue.push(mutation);
+  saveMutationQueue(queue);
+}
+
+function removeMutation(mutationId) {
+  saveMutationQueue(loadMutationQueue().filter((item) => item.id !== mutationId));
+}
+
+function hasPendingWeightEntry(participantId, date) {
+  return loadMutationQueue().some((mutation) => (
+    mutation.type === "weight-entry"
+    && mutation.participantId === participantId
+    && mutation.date === date
+  ));
+}
+
+function createWeightEntryMutation(participantId, entry) {
+  const mutationId = createParticipantId();
+  return {
+    id: mutationId,
+    type: "weight-entry",
+    participantId,
+    date: entry.date,
+    weight: entry.weight,
+    createdAt: entry.createdAt || new Date().toISOString(),
+    updatedAt: entry.updatedAt || new Date().toISOString(),
+  };
+}
+
+function applyPendingMutations(nextState) {
+  const mergedState = normalizeState(nextState);
+  loadMutationQueue().forEach((mutation) => {
+    applyMutationToState(mergedState, mutation);
+  });
+  return normalizeState(mergedState);
+}
+
+function applyMutationToState(targetState, mutation) {
+  if (mutation.type !== "weight-entry") return;
+  const participant = targetState.participants.find((item) => item.id === mutation.participantId);
+  if (!participant) return;
+  upsertEntry(participant, mutation.date, round1(Number(mutation.weight)), {
+    createdAt: mutation.createdAt,
+    updatedAt: mutation.updatedAt,
+    mutationId: mutation.id,
+  });
+}
+
+async function drainMutationQueue(options = {}) {
+  if (dataStore.type !== "api" || typeof dataStore.syncMutation !== "function" || mutationSyncInFlight) return;
+
+  mutationSyncInFlight = true;
+  let syncedCount = 0;
+  try {
+    const queue = loadMutationQueue();
+    for (const mutation of queue) {
+      try {
+        await dataStore.syncMutation(mutation);
+        removeMutation(mutation.id);
+        syncedCount += 1;
+      } catch (error) {
+        console.error(error);
+        if (options.notify) showToast("已先保存在本机，网络恢复后自动同步");
+        break;
+      }
+    }
+  } finally {
+    mutationSyncInFlight = false;
+  }
+
+  if (options.notify && syncedCount > 0 && !loadMutationQueue().length) {
+    showToast("已同步");
+  }
+  if (options.render && syncedCount > 0 && !elements.mainApp.classList.contains("hidden")) {
+    renderAll();
+  }
+}
+
 function normalizeState(nextState) {
   const fallback = getDefaultState();
   const session = loadSession();
@@ -431,6 +537,9 @@ function createDataStore(config) {
 
   return {
     type: "local",
+    loadLocal() {
+      return loadLocalState();
+    },
     async load() {
       return loadLocalState();
     },
@@ -442,6 +551,7 @@ function createDataStore(config) {
 
 function createApiStore(config) {
   const endpoint = config.apiEndpoint || "/api/state";
+  const weightEntryEndpoint = config.weightEntryEndpoint || "/api/weight-entry";
 
   async function requestState(options = {}) {
     const method = options.method || "GET";
@@ -492,13 +602,39 @@ function createApiStore(config) {
     return data?.avatar || "";
   }
 
+  async function requestWeightEntry(mutation) {
+    const response = await fetch(weightEntryEndpoint, {
+      method: "POST",
+      cache: "no-store",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        participantId: mutation.participantId,
+        date: mutation.date,
+        weight: mutation.weight,
+        createdAt: mutation.createdAt,
+        updatedAt: mutation.updatedAt,
+        mutationId: mutation.id,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Weight entry API failed: ${response.status}`);
+    }
+    return response.json();
+  }
+
   return {
     type: "api",
+    loadLocal() {
+      return applyPendingMutations(loadLocalState());
+    },
     async load() {
       try {
         const data = await requestState();
         if (data?.payload) {
-          const remoteState = mergeLocalAvatars(normalizeState(data.payload));
+          const remoteState = applyPendingMutations(mergeLocalAvatars(normalizeState(data.payload)));
           saveLocalState(remoteState);
           return remoteState;
         }
@@ -522,28 +658,64 @@ function createApiStore(config) {
     async loadAvatar(participantId) {
       return requestAvatar(participantId);
     },
+    async syncMutation(mutation) {
+      if (mutation.type === "weight-entry") {
+        await requestWeightEntry(mutation);
+        return;
+      }
+      throw new Error(`Unsupported mutation: ${mutation.type}`);
+    },
   };
 }
 
 function startRemoteSync() {
   if (dataStore.type !== "api" || remoteSyncTimer) return;
 
-  remoteSyncTimer = window.setInterval(async () => {
-    const session = loadSession();
-    const remoteState = await dataStore.load();
-    state = {
-      ...remoteState,
-      currentUserId: session.participantId || "",
-      sessionRole: session.role || "",
-    };
-    await refreshAvatarThemeColors();
-    saveLocalState(state);
-    renderOnboardingOptions();
-    if (!elements.mainApp.classList.contains("hidden")) {
-      renderAll();
-    }
-    queueAvatarHydration();
+  remoteSyncTimer = window.setInterval(() => {
+    syncRemoteState({ render: true }).catch((error) => console.error(error));
   }, REMOTE_SYNC_INTERVAL_MS);
+}
+
+async function syncRemoteState(options = {}) {
+  if (dataStore.type !== "api") return;
+
+  await drainMutationQueue();
+  const session = loadSession();
+  const remoteState = await dataStore.load();
+  state = {
+    ...remoteState,
+    currentUserId: session.participantId || "",
+    sessionRole: session.role || "",
+  };
+  await refreshAvatarThemeColors();
+  saveLocalState(state);
+  if (!options.render) {
+    queueAvatarHydration();
+    return;
+  }
+
+  if (!hasValidSession()) {
+    const hasJoinDraft = Boolean(
+      pendingAvatar
+      || elements.displayName.value
+      || elements.initialWeight.value
+      || elements.accessCode.value,
+    );
+    if (!hasJoinDraft) {
+      authMode = state.participants.length ? "login" : "register";
+    }
+    renderOnboardingOptions();
+    showOnboarding();
+    return;
+  }
+
+  renderOnboardingOptions();
+  if (elements.mainApp.classList.contains("hidden")) {
+    showApp();
+  } else {
+    renderAll();
+  }
+  queueAvatarHydration();
 }
 
 function queueAvatarHydration() {
@@ -870,18 +1042,18 @@ async function submitWeight(event) {
     return;
   }
 
-  const previousEntries = participant.entries.map((entry) => ({ ...entry }));
-  upsertEntry(participant, getTodayISO(), round1(weight));
-  try {
-    await saveState();
-  } catch {
-    participant.entries = previousEntries;
-    renderAll();
+  const entry = upsertEntry(participant, getTodayISO(), round1(weight));
+  saveLocalState(state);
+  elements.weightInput.value = "";
+  renderAll();
+
+  if (dataStore.type === "api") {
+    enqueueMutation(createWeightEntryMutation(participant.id, entry));
+    showToast("已记录，正在同步");
+    drainMutationQueue({ notify: true, render: true }).catch((error) => console.error(error));
     return;
   }
 
-  elements.weightInput.value = "";
-  renderAll();
   showToast("今天的上秤已更新");
 }
 
@@ -1090,10 +1262,7 @@ function renderDashboard(computed) {
       : `初始 ${formatNumber(current.initialWeight, 1)}kg 已锁定`;
     elements.dashboardGap.textContent = "5 位参赛成员坐满自动开局";
     elements.weightForm.classList.toggle("hidden", isCompetitor(current));
-    const latest = getLatestEntry(current);
-    elements.lastEntryText.textContent = latest
-      ? `上次 ${formatDateShort(latest.date)} · ${formatNumber(latest.weight, 1)}kg`
-      : "陪伴用户可以先记录体重";
+    elements.lastEntryText.textContent = getLastEntryLabel(current, "陪伴用户可以先记录体重");
     elements.dashboardLeaderboard.innerHTML = waitingListHtml();
     return;
   }
@@ -1124,10 +1293,7 @@ function renderDashboard(computed) {
     elements.dashboardMoney.textContent = `¥${formatMoney(payout.pay)}`;
   }
 
-  const latest = getLatestEntry(current);
-  elements.lastEntryText.textContent = latest
-    ? `上次 ${formatDateShort(latest.date)} · ${formatNumber(latest.weight, 1)}kg`
-    : "还没有上秤记录";
+  elements.lastEntryText.textContent = getLastEntryLabel(current, "还没有上秤记录");
 
   elements.dashboardLeaderboard.innerHTML = computed.displayResults.slice(0, 5).map((item) => rankRowHtml(item, computed, true)).join("");
 }
@@ -1944,6 +2110,14 @@ function getLatestEntry(participant) {
   return [...participant.entries].sort((a, b) => b.date.localeCompare(a.date))[0];
 }
 
+function getLastEntryLabel(participant, fallback) {
+  const latest = getLatestEntry(participant);
+  if (!latest) return fallback;
+
+  const syncText = hasPendingWeightEntry(participant.id, latest.date) ? " · 同步中" : "";
+  return `上次 ${formatDateShort(latest.date)} · ${formatNumber(latest.weight, 1)}kg${syncText}`;
+}
+
 function getCurrentWeight(participant) {
   return getLatestEntry(participant)?.weight ?? participant.initialWeight;
 }
@@ -1958,14 +2132,22 @@ function getWeightAtTick(participant, tick) {
   return getWeightAtDate(participant, tick.date);
 }
 
-function upsertEntry(participant, date, weight) {
+function upsertEntry(participant, date, weight, meta = {}) {
   const existing = participant.entries.find((entry) => entry.date === date);
   if (existing) {
     existing.weight = weight;
-    existing.updatedAt = new Date().toISOString();
-    return;
+    existing.updatedAt = meta.updatedAt || new Date().toISOString();
+    if (meta.mutationId) existing.mutationId = meta.mutationId;
+    return existing;
   }
-  participant.entries.push({ date, weight, createdAt: new Date().toISOString() });
+  const entry = {
+    date,
+    weight,
+    createdAt: meta.createdAt || new Date().toISOString(),
+    ...(meta.mutationId ? { mutationId: meta.mutationId } : {}),
+  };
+  participant.entries.push(entry);
+  return entry;
 }
 
 async function handleAvatarFile(event, onLoad) {

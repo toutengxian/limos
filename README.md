@@ -57,7 +57,10 @@ window.LIMOS_CONFIG = {
 };
 ```
 
-线上浏览器只请求本站的 `/api/state`。Vercel Serverless Function 再用环境变量连接 Supabase，避免用户设备直接访问 `*.supabase.co` 或第三方 SDK CDN。
+线上浏览器只请求本站 API。Vercel Serverless Function 再用环境变量连接 Supabase，避免用户设备直接访问 `*.supabase.co` 或第三方 SDK CDN。
+
+- `/api/state` 拉取小队状态，默认不返回头像正文，并支持 ETag 缓存。
+- `/api/weight-entry` 只提交单条体重记录。前端会先本地更新 UI，再在后台同步；网络慢或失败时会保留本地队列并自动重试。执行新版 `supabase.sql` 后，该接口会优先写入 `limos_weight_entries` 业务表；如果表还没创建，会自动回退到旧 state 写法。
 
 没有 API 或 Supabase 环境变量时，应用会回退到本地模式。这个模式不是线上真实多人同步，只适合开发预览。
 
@@ -78,7 +81,7 @@ LIMOS_SUPABASE_ANON_KEY=YOUR_SUPABASE_PUBLISHABLE_KEY
 LIMOS_ADMIN_CODE_HASH=SHA256_OF_YOUR_ADMIN_CODE
 ```
 
-4. Vercel 构建时会自动生成 `config.js`，其中只包含 `/api/state`，不会把 Supabase URL 和 key 暴露给浏览器。
+4. Vercel 构建时会自动生成 `config.js`，其中只包含本站 API 路径，不会把 Supabase URL 和 key 暴露给浏览器。
 5. 部署完成后，把 Vercel URL 发给参赛成员和陪伴用户。
 
 成员登录码为 6-20 个字符。当前默认管理员码是 `limos-25000`；如果要更换，把新管理员码做 SHA-256 后填到 `LIMOS_ADMIN_CODE_HASH`。

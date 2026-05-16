@@ -3,5 +3,6 @@ window.LIMOS_CONFIG = {
   "storageMode": "local",
   "stateId": "limos-local",
   "apiEndpoint": "/api/state",
+  "weightEntryEndpoint": "/api/weight-entry",
   "adminCodeHash": ""
 };

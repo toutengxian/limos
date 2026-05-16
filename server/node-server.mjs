@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import stateHandler from "../api/state.js";
+import weightEntryHandler from "../api/weight-entry.js";
 
 const ROOT_DIR = fileURLToPath(new URL("../", import.meta.url));
 const HOST = process.env.HOST || "0.0.0.0";
@@ -82,6 +83,11 @@ const server = createServer(async (request, response) => {
 
   if (pathname === "/api/state") {
     await stateHandler(request, response);
+    return;
+  }
+
+  if (pathname === "/api/weight-entry") {
+    await weightEntryHandler(request, response);
     return;
   }
 
