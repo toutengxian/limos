@@ -6,6 +6,7 @@ const storageMode = process.env.LIMOS_STORAGE_MODE || (supabaseUrl && supabaseAn
 const stateId = process.env.LIMOS_STATE_ID || (storageMode === "api" ? "limos-2026" : "limos-local");
 const adminCodeHash = process.env.LIMOS_ADMIN_CODE_HASH || "";
 const apiEndpoint = process.env.LIMOS_API_ENDPOINT || "/api/state";
+const weightEntryEndpoint = process.env.LIMOS_WEIGHT_ENTRY_ENDPOINT || "/api/weight-entry";
 const environment = process.env.LIMOS_ENV || process.env.VERCEL_ENV || "local";
 
 const config = {
@@ -13,6 +14,7 @@ const config = {
   storageMode,
   stateId,
   apiEndpoint,
+  weightEntryEndpoint,
   adminCodeHash,
 };
 

@@ -1,106 +1,86 @@
-const TABLE_NAME = "fat_battle_state";
+import {
+  createPayloadEtag,
+  fetchState,
+  fetchWeightEntryRows,
+  findParticipantAvatar,
+  getDefaultPayload,
+  getEnvConfig,
+  hasSupabaseConfig,
+  mergeWeightEntriesIntoPayload,
+  mergePayloadForWrite,
+  readRequestBody,
+  stripPayloadAvatars,
+  writeState,
+} from "./state-store.js";
 
-function getEnvConfig() {
-  return {
-    supabaseUrl: process.env.LIMOS_SUPABASE_URL || "",
-    supabaseKey: process.env.LIMOS_SUPABASE_SERVICE_ROLE_KEY || process.env.LIMOS_SUPABASE_ANON_KEY || "",
-    stateId: process.env.LIMOS_STATE_ID || "limos-2026",
-  };
-}
-
-function json(response, statusCode, body) {
+function json(response, statusCode, body, headers = {}) {
   response.statusCode = statusCode;
   response.setHeader("Content-Type", "application/json; charset=utf-8");
-  response.setHeader("Cache-Control", "no-store");
+  response.setHeader("Cache-Control", headers["Cache-Control"] || "no-store");
+  Object.entries(headers).forEach(([key, value]) => {
+    if (key !== "Cache-Control") response.setHeader(key, value);
+  });
   response.end(JSON.stringify(body));
 }
 
-function getDefaultPayload() {
-  return {
-    competition: {
-      status: "waiting",
-      startedAt: "",
-      maxParticipants: 5,
-    },
-    participants: [],
-  };
-}
-
-async function readRequestBody(request) {
-  const chunks = [];
-  for await (const chunk of request) {
-    chunks.push(chunk);
-  }
-
-  if (!chunks.length) return {};
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
-}
-
-function createSupabaseHeaders(config) {
-  return {
-    apikey: config.supabaseKey,
-    Authorization: `Bearer ${config.supabaseKey}`,
-    "Content-Type": "application/json",
-  };
-}
-
-function createTableUrl(config, query = "") {
-  const baseUrl = config.supabaseUrl.replace(/\/$/, "");
-  return `${baseUrl}/rest/v1/${TABLE_NAME}${query}`;
-}
-
-async function fetchState(config) {
-  const query = `?id=eq.${encodeURIComponent(config.stateId)}&select=payload`;
-  const response = await fetch(createTableUrl(config, query), {
-    headers: createSupabaseHeaders(config),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Supabase read failed: ${response.status}`);
-  }
-
-  const rows = await response.json();
-  return rows[0]?.payload || null;
-}
-
-async function writeState(config, payload) {
-  const response = await fetch(createTableUrl(config), {
-    method: "POST",
-    headers: {
-      ...createSupabaseHeaders(config),
-      Prefer: "resolution=merge-duplicates",
-    },
-    body: JSON.stringify({
-      id: config.stateId,
-      payload,
-      updated_at: new Date().toISOString(),
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Supabase write failed: ${response.status}`);
-  }
+function notModified(response, etag) {
+  response.statusCode = 304;
+  response.setHeader("Cache-Control", "no-cache");
+  response.setHeader("ETag", etag);
+  response.end();
 }
 
 export default async function handler(request, response) {
   const config = getEnvConfig();
 
-  if (!config.supabaseUrl || !config.supabaseKey) {
+  if (!hasSupabaseConfig(config)) {
     json(response, 500, { error: "missing_supabase_config" });
     return;
   }
 
   try {
     if (request.method === "GET") {
+      const requestUrl = new URL(request.url || "/", "http://localhost");
       const payload = await fetchState(config);
       if (payload) {
-        json(response, 200, { payload });
+        mergeWeightEntriesIntoPayload(payload, await fetchWeightEntryRows(config));
+        const avatarParticipantId = requestUrl.searchParams.get("avatar");
+        if (avatarParticipantId) {
+          const avatar = findParticipantAvatar(payload, avatarParticipantId);
+          const avatarBody = { id: avatarParticipantId, avatar };
+          const avatarEtag = createPayloadEtag(avatarBody);
+          if (request.headers["if-none-match"] === avatarEtag) {
+            notModified(response, avatarEtag);
+            return;
+          }
+
+          json(response, avatar ? 200 : 404, avatarBody, {
+            "Cache-Control": "no-cache",
+            ETag: avatarEtag,
+          });
+          return;
+        }
+
+        const publicPayload = stripPayloadAvatars(payload);
+        const etag = createPayloadEtag(publicPayload);
+        if (request.headers["if-none-match"] === etag) {
+          notModified(response, etag);
+          return;
+        }
+
+        json(response, 200, { payload: publicPayload }, {
+          "Cache-Control": "no-cache",
+          ETag: etag,
+        });
         return;
       }
 
       const defaultPayload = getDefaultPayload();
       await writeState(config, defaultPayload);
-      json(response, 200, { payload: defaultPayload });
+      json(response, 200, { payload: defaultPayload }, {
+        "Cache-Control": "no-cache",
+        ETag: createPayloadEtag(stripPayloadAvatars(defaultPayload)),
+      });
       return;
     }
 
@@ -111,8 +91,12 @@ export default async function handler(request, response) {
         return;
       }
 
-      await writeState(config, body.payload);
-      json(response, 200, { ok: true });
+      const existingPayload = await fetchState(config, { forceFresh: true });
+      const mergedPayload = mergePayloadForWrite(existingPayload, body.payload);
+      await writeState(config, mergedPayload);
+      json(response, 200, { ok: true }, {
+        ETag: createPayloadEtag(stripPayloadAvatars(mergedPayload)),
+      });
       return;
     }
 

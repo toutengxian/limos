@@ -18,6 +18,7 @@
 - 看板、曲线、上秤日历和排位支持“全部 / 仅参赛”筛选
 - 本地模式用于开发预览
 - Vercel API 代理 Supabase，用于真实多人同步
+- 可用 Node 单服务部署到腾讯云香港轻量/CVM，降低国内用户访问 Vercel 的不稳定性
 
 ## 本地预览
 
@@ -56,7 +57,10 @@ window.LIMOS_CONFIG = {
 };
 ```
 
-线上浏览器只请求本站的 `/api/state`。Vercel Serverless Function 再用环境变量连接 Supabase，避免用户设备直接访问 `*.supabase.co` 或第三方 SDK CDN。
+线上浏览器只请求本站 API。Vercel Serverless Function 再用环境变量连接 Supabase，避免用户设备直接访问 `*.supabase.co` 或第三方 SDK CDN。
+
+- `/api/state` 拉取小队状态，默认不返回头像正文，并支持 ETag 缓存。
+- `/api/weight-entry` 只提交单条体重记录。前端会先本地更新 UI，再在后台同步；网络慢或失败时会保留本地队列并自动重试。执行新版 `supabase.sql` 后，该接口会优先写入 `limos_weight_entries` 业务表；如果表还没创建，会自动回退到旧 state 写法。
 
 没有 API 或 Supabase 环境变量时，应用会回退到本地模式。这个模式不是线上真实多人同步，只适合开发预览。
 
@@ -77,7 +81,7 @@ LIMOS_SUPABASE_ANON_KEY=YOUR_SUPABASE_PUBLISHABLE_KEY
 LIMOS_ADMIN_CODE_HASH=SHA256_OF_YOUR_ADMIN_CODE
 ```
 
-4. Vercel 构建时会自动生成 `config.js`，其中只包含 `/api/state`，不会把 Supabase URL 和 key 暴露给浏览器。
+4. Vercel 构建时会自动生成 `config.js`，其中只包含本站 API 路径，不会把 Supabase URL 和 key 暴露给浏览器。
 5. 部署完成后，把 Vercel URL 发给参赛成员和陪伴用户。
 
 成员登录码为 6-20 个字符。当前默认管理员码是 `limos-25000`；如果要更换，把新管理员码做 SHA-256 后填到 `LIMOS_ADMIN_CODE_HASH`。
@@ -93,6 +97,22 @@ npm run deploy
 
 ```bash
 VERCEL_TOKEN=YOUR_TOKEN npx vercel --prod --yes --token YOUR_TOKEN
+```
+
+## 国内访问阶段 1
+
+如果用户在国内不翻墙访问 Vercel 很慢，可以先把同一套前端和 `/api/state` 迁到腾讯云香港轻量/CVM，Supabase 暂时保持不变。详见 [docs/mainland-stage1.md](./docs/mainland-stage1.md)。
+
+本仓库已提供通用 Node 服务入口：
+
+```bash
+LIMOS_ENV_FILE=.env.production npm start
+```
+
+腾讯云香港灰度部署可以直接用：
+
+```bash
+DOMAIN=hk.limos.best bash deploy/tencent-hk/install.sh
 ```
 
 ## 开发与生产环境

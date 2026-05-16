@@ -5,5 +5,6 @@ window.LIMOS_CONFIG = {
   storageMode: "api",
   stateId: "limos-2026-dev",
   apiEndpoint: "/api/state",
+  weightEntryEndpoint: "/api/weight-entry",
   adminCodeHash: "SHA256_OF_YOUR_ADMIN_CODE",
 };
