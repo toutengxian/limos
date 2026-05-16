@@ -8,13 +8,23 @@ import weightEntryHandler from "../api/weight-entry.js";
 const ROOT_DIR = fileURLToPath(new URL("../", import.meta.url));
 const HOST = process.env.HOST || "0.0.0.0";
 const PORT = Number.parseInt(process.env.PORT || "3000", 10);
-const STATIC_FILES = new Set(["index.html", "styles.css", "app.js", "config.js"]);
+const STATIC_FILES = new Set([
+  "index.html",
+  "styles.css",
+  "app.js",
+  "config.js",
+  "favicon.svg",
+  "apple-touch-icon.svg",
+  "site.webmanifest",
+]);
 
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".webmanifest": "application/manifest+json; charset=utf-8",
 };
 
 function sendJson(response, statusCode, body) {
