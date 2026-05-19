@@ -60,7 +60,10 @@ window.LIMOS_CONFIG = {
 线上浏览器只请求本站 API。Vercel Serverless Function 再用环境变量连接 Supabase，避免用户设备直接访问 `*.supabase.co` 或第三方 SDK CDN。
 
 - `/api/state` 拉取小队状态，默认不返回头像正文，并支持 ETag 缓存。
+- `/api/member` 处理注册、资料更新、退出和管理员移除，避免这些操作继续走全量状态覆盖。
 - `/api/weight-entry` 只提交单条体重记录。前端会先本地更新 UI，再在后台同步；网络慢或失败时会保留本地队列并自动重试。执行新版 `supabase.sql` 后，该接口会优先写入 `limos_weight_entries` 业务表；如果表还没创建，会自动回退到旧 state 写法。
+- `/api/diagnostics` 检查 Supabase 配置、主状态读取和体重明细表读取，用于线上排障。
+- `/api/backup` 会把当前小队状态和体重明细写入 `limos_state_backups`。Vercel 会按 `vercel.json` 每天触发一次；如果以后改用外部 cron，可以配置 `LIMOS_BACKUP_TOKEN` 并在调用时带 `?token=...` 或 `x-limos-backup-token`。
 
 没有 API 或 Supabase 环境变量时，应用会回退到本地模式。这个模式不是线上真实多人同步，只适合开发预览。
 
@@ -122,6 +125,12 @@ DOMAIN=hk.limos.best bash deploy/tencent-hk/install.sh
 - `develop`：开发测试，连接 dev Supabase，使用 Preview/Development 环境变量
 - `main`：正式环境，连接生产 Supabase，使用 Production 环境变量
 - `npm run promote:prod`：从 `develop` 检查并合并到 `main`，触发生产部署
+
+常用检查：
+
+```bash
+npm run check
+```
 
 ## 手动部署
 

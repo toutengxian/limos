@@ -697,6 +697,35 @@ select.input:hover {
   font-weight: 510;
 }
 
+.sync-status {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 180px;
+  margin-top: 4px;
+  padding: 3px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.58);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.5);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 680;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.sync-status[data-status="syncing"] {
+  border-color: rgba(31, 122, 92, 0.22);
+  background: rgba(235, 249, 240, 0.72);
+  color: var(--brand);
+}
+
+.sync-status[data-status="pending"],
+.sync-status[data-status="failed"] {
+  border-color: rgba(216, 74, 95, 0.18);
+  background: rgba(255, 241, 243, 0.72);
+  color: var(--danger);
+}
+
 .ghost-icon-button {
   display: grid;
   width: 40px;
