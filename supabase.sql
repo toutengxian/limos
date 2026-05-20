@@ -85,3 +85,43 @@ create policy "limos update weight entries"
   to anon
   using (true)
   with check (true);
+
+create table if not exists public.limos_state_backups (
+  id bigint generated always as identity primary key,
+  state_id text not null,
+  source text not null default 'manual',
+  payload jsonb not null,
+  weight_entries jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists limos_state_backups_state_created_idx
+  on public.limos_state_backups (state_id, created_at desc);
+
+alter table public.limos_state_backups enable row level security;
+
+do $$
+declare
+  policy_name text;
+begin
+  for policy_name in
+    select policyname
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'limos_state_backups'
+  loop
+    execute format('drop policy if exists %I on public.limos_state_backups', policy_name);
+  end loop;
+end $$;
+
+create policy "limos insert backups"
+  on public.limos_state_backups
+  for insert
+  to anon
+  with check (true);
+
+create policy "limos read backups"
+  on public.limos_state_backups
+  for select
+  to anon
+  using (true);

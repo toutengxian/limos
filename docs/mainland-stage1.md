@@ -1,16 +1,16 @@
 # Mainland Access Stage 1
 
-目标：先绕开国内到 Vercel 的不稳定链路，把 Limos 前端和 `/api/state` 放到腾讯云香港轻量/CVM。Supabase 暂时保留，只由服务器端访问，浏览器仍然只访问本站域名。
+目标：先绕开国内到 Vercel 的不稳定链路，把 Limos 前端和同源 `/api/*` 放到腾讯云香港轻量/CVM。Supabase 暂时保留，只由服务器端访问，浏览器仍然只访问本站域名。
 
-这一步不改生产数据结构，也不影响当前 Vercel 生产站。验证通过后再把 `limos.best` 的 DNS 切到新主机。
+这一步不改生产数据结构。当前 `hk.limos.best` 已经承载真实用户访问，所以按生产入口管理，默认部署 `main` 分支并连接生产 Supabase。
 
 ## 架构
 
 ```text
 用户浏览器
-  -> limos.best
+  -> hk.limos.best
   -> 腾讯云香港 Node 服务
-  -> /api/state 服务器端访问 Supabase
+  -> /api/* 服务器端访问 Supabase
 ```
 
 阶段 1 解决的是「国内用户访问 Vercel 慢或失败」。如果 Supabase 服务器端访问也不稳定，阶段 2 再把数据库和头像迁到腾讯云体系。
@@ -49,7 +49,7 @@ apt-get update
 apt-get install -y git
 git clone https://github.com/toutengxian/limos.git /opt/limos
 cd /opt/limos
-git checkout develop
+git checkout main
 DOMAIN=hk.limos.best bash deploy/tencent-hk/install.sh
 ```
 
@@ -68,11 +68,11 @@ DOMAIN=hk.limos.best bash /opt/limos/deploy/tencent-hk/install.sh
 ```bash
 git clone https://github.com/toutengxian/limos.git /opt/limos
 cd /opt/limos
-git checkout develop
+git checkout main
 npm ci
 ```
 
-阶段 1 灰度先使用 `develop`。确认 `hk.limos.best` 稳定后，再把代码合并到 `main` 并切正式域名。
+`hk.limos.best` 面向真实用户时使用 `main`。如需灰度测试，请另建测试域名和 dev Supabase，不要让 HK 生产入口追 `develop`。
 
 创建 `/opt/limos/.env.production`：
 

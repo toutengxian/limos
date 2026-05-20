@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/check-environment.mjs && node scripts/write-config.mjs",
-    "check": "node --check app.js && node --check api/state.js && node --check api/state-store.js && node --check api/weight-entry.js && node --check server/node-server.mjs && node --check scripts/write-config.mjs && node --check scripts/check-environment.mjs && node --check scripts/promote-production.mjs && node --check scripts/start-node.mjs",
+    "check": "node --check app.js && node --check api/state.js && node --check api/state-store.js && node --check api/member.js && node --check api/weight-entry.js && node --check api/diagnostics.js && node --check api/backup.js && node --check server/node-server.mjs && node --check scripts/write-config.mjs && node --check scripts/check-environment.mjs && node --check scripts/promote-production.mjs && node --check scripts/start-node.mjs && npm test",
+    "test": "node --test tests/*.test.mjs",
     "dev": "npx vercel dev --listen 5173",
     "deploy:dev": "npx vercel",
     "deploy:prod": "npx vercel --prod",

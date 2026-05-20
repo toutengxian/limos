@@ -46,6 +46,11 @@ let toastTimer = 0;
 let remoteSyncTimer = 0;
 let avatarHydrationTimer = 0;
 let mutationSyncInFlight = false;
+let syncStatus = {
+  kind: "idle",
+  message: "",
+  updatedAt: "",
+};
 let trendHoverIndex = null;
 let trendChartMeta = null;
 const avatarThemeColorCache = new Map();
@@ -78,6 +83,7 @@ const elements = {
   topbarAvatar: $("#topbar-avatar"),
   topbarName: $("#topbar-name"),
   topbarStatus: $("#topbar-status"),
+  syncStatus: $("#sync-status"),
   dashboardRank: $("#dashboard-rank"),
   dashboardRankLabel: $("#dashboard-rank-label"),
   dashboardRateLabel: $("#dashboard-rate-label"),
@@ -190,6 +196,11 @@ function bindEvents() {
   window.addEventListener("online", () => {
     drainMutationQueue({ notify: true, render: true }).catch((error) => console.error(error));
   });
+  window.addEventListener("beforeunload", (event) => {
+    if (!loadMutationQueue().length) return;
+    event.preventDefault();
+    event.returnValue = "";
+  });
   window.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !elements.ledgerHelpModal.classList.contains("hidden")) {
       closeLedgerHelp();
@@ -205,6 +216,33 @@ function openLedgerHelp() {
 function closeLedgerHelp() {
   elements.ledgerHelpModal.classList.add("hidden");
   elements.ledgerHelpButton.focus();
+}
+
+function setSyncStatus(kind, message) {
+  syncStatus = {
+    kind,
+    message,
+    updatedAt: new Date().toISOString(),
+  };
+  renderSyncStatus();
+}
+
+function renderSyncStatus() {
+  if (!elements.syncStatus) return;
+
+  if (dataStore.type !== "api") {
+    elements.syncStatus.textContent = "本机模式";
+    elements.syncStatus.dataset.status = "local";
+    return;
+  }
+
+  const pendingCount = loadMutationQueue().length;
+  const kind = pendingCount && syncStatus.kind !== "syncing" ? "pending" : syncStatus.kind;
+  const message = pendingCount && syncStatus.kind !== "syncing"
+    ? `${pendingCount} 条待同步`
+    : syncStatus.message || "云端已同步";
+  elements.syncStatus.textContent = message;
+  elements.syncStatus.dataset.status = kind || "idle";
 }
 
 function getDefaultState() {
@@ -270,7 +308,11 @@ function clearSession() {
 }
 
 function saveState() {
-  return dataStore.save(state).catch((error) => {
+  if (dataStore.type === "api") setSyncStatus("syncing", "正在保存");
+  return dataStore.save(state).then(() => {
+    if (dataStore.type === "api") setSyncStatus("synced", "云端已同步");
+  }).catch((error) => {
+    if (dataStore.type === "api") setSyncStatus("failed", "同步失败");
     console.error(error);
     showToast("保存失败，已保留本地副本");
     throw error;
@@ -358,6 +400,7 @@ function enqueueMutation(mutation) {
   if (queue.some((item) => item.id === mutation.id)) return;
   queue.push(mutation);
   saveMutationQueue(queue);
+  setSyncStatus("pending", `${queue.length} 条待同步`);
 }
 
 function removeMutation(mutationId) {
@@ -411,6 +454,12 @@ async function drainMutationQueue(options = {}) {
   let syncedCount = 0;
   try {
     const queue = loadMutationQueue();
+    if (!queue.length) {
+      setSyncStatus("synced", "云端已同步");
+      return;
+    }
+
+    setSyncStatus("syncing", `${queue.length} 条正在同步`);
     for (const mutation of queue) {
       try {
         await dataStore.syncMutation(mutation);
@@ -418,6 +467,8 @@ async function drainMutationQueue(options = {}) {
         syncedCount += 1;
       } catch (error) {
         console.error(error);
+        const pendingCount = loadMutationQueue().length || queue.length - syncedCount;
+        setSyncStatus("pending", `${pendingCount} 条待同步`);
         if (options.notify) showToast("已先保存在本机，网络恢复后自动同步");
         break;
       }
@@ -426,7 +477,11 @@ async function drainMutationQueue(options = {}) {
     mutationSyncInFlight = false;
   }
 
-  if (options.notify && syncedCount > 0 && !loadMutationQueue().length) {
+  const pendingCount = loadMutationQueue().length;
+  if (!pendingCount) {
+    setSyncStatus("synced", "云端已同步");
+  }
+  if (options.notify && syncedCount > 0 && !pendingCount) {
     showToast("已同步");
   }
   if (options.render && syncedCount > 0 && !elements.mainApp.classList.contains("hidden")) {
@@ -551,6 +606,7 @@ function createDataStore(config) {
 
 function createApiStore(config) {
   const endpoint = config.apiEndpoint || "/api/state";
+  const memberEndpoint = config.memberEndpoint || "/api/member";
   const weightEntryEndpoint = config.weightEntryEndpoint || "/api/weight-entry";
 
   async function requestState(options = {}) {
@@ -625,6 +681,25 @@ function createApiStore(config) {
     return response.json();
   }
 
+  async function requestMemberMutation(action, body = {}) {
+    const response = await fetch(memberEndpoint, {
+      method: "POST",
+      cache: "no-store",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        action,
+        ...body,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Member API failed: ${response.status}`);
+    }
+    return response.json();
+  }
+
   return {
     type: "api",
     loadLocal() {
@@ -658,6 +733,9 @@ function createApiStore(config) {
     async loadAvatar(participantId) {
       return requestAvatar(participantId);
     },
+    async mutateMember(action, body) {
+      return requestMemberMutation(action, body);
+    },
     async syncMutation(mutation) {
       if (mutation.type === "weight-entry") {
         await requestWeightEntry(mutation);
@@ -665,6 +743,43 @@ function createApiStore(config) {
       }
       throw new Error(`Unsupported mutation: ${mutation.type}`);
     },
+  };
+}
+
+async function syncMemberMutation(action, body) {
+  if (dataStore.type !== "api" || typeof dataStore.mutateMember !== "function") {
+    await saveState();
+    return null;
+  }
+
+  saveLocalState(state);
+  setSyncStatus("syncing", "正在同步资料");
+  try {
+    const data = await dataStore.mutateMember(action, body);
+    if (data?.payload) {
+      const session = loadSession();
+      const remoteState = applyPendingMutations(mergeLocalAvatars(normalizeState(data.payload)));
+      state = {
+        ...remoteState,
+        currentUserId: session.participantId || "",
+        sessionRole: session.role || "",
+      };
+      saveLocalState(state);
+    }
+    setSyncStatus("synced", "云端已同步");
+    return data;
+  } catch (error) {
+    setSyncStatus("failed", "同步失败");
+    throw error;
+  }
+}
+
+function participantMutationPayload(participant, options = {}) {
+  const { avatar, entries, ...rest } = participant;
+  return {
+    ...rest,
+    ...(options.includeAvatar && avatar ? { avatar } : {}),
+    ...(options.includeEntries ? { entries } : {}),
   };
 }
 
@@ -689,6 +804,7 @@ async function syncRemoteState(options = {}) {
   };
   await refreshAvatarThemeColors();
   saveLocalState(state);
+  if (!loadMutationQueue().length) setSyncStatus("synced", "云端已同步");
   if (!options.render) {
     queueAvatarHydration();
     return;
@@ -930,7 +1046,13 @@ async function submitOnboarding(event) {
   maybeStartCompetition();
   saveSession({ role: ROLE_MEMBER, participantId: participant.id });
   try {
-    await saveState();
+    await syncMemberMutation("join", {
+      participant: participantMutationPayload(participant, {
+        includeAvatar: true,
+        includeEntries: true,
+      }),
+    });
+    pendingAvatarUploadIds.delete(participant.id);
   } catch {
     state.participants = previousParticipants;
     state.competition = previousCompetition;
@@ -1081,7 +1203,15 @@ async function submitProfile(event) {
     pendingAvatarUploadIds.add(participant.id);
   }
   try {
-    await saveState();
+    await syncMemberMutation("profile", {
+      participantId: participant.id,
+      profile: {
+        name: participant.name,
+        color: participant.color,
+        ...(pendingProfileAvatar ? { avatar: participant.avatar } : {}),
+      },
+    });
+    if (pendingProfileAvatar) pendingAvatarUploadIds.delete(participant.id);
   } catch {
     participant.name = previousName;
     participant.avatar = previousAvatar;
@@ -1097,6 +1227,10 @@ async function submitProfile(event) {
 }
 
 async function logout() {
+  if (loadMutationQueue().length) {
+    const shouldLogout = window.confirm("还有记录没有同步到云端。现在退出可能只能保留在这台设备上，确定退出吗？");
+    if (!shouldLogout) return;
+  }
   clearSession();
   state = await dataStore.load();
   await refreshAvatarThemeColors();
@@ -1129,7 +1263,9 @@ async function leaveTeam() {
   removeParticipantFromState(participant.id);
   clearSession();
   try {
-    await saveState();
+    await syncMemberMutation("remove", {
+      participantId: participant.id,
+    });
   } catch {
     state.participants = previousParticipants;
     state.competition = previousCompetition;
@@ -1178,7 +1314,9 @@ async function removeParticipantAsAdmin(participantId) {
   const previousCompetition = state.competition;
   removeParticipantFromState(participant.id);
   try {
-    await saveState();
+    await syncMemberMutation("remove", {
+      participantId: participant.id,
+    });
   } catch {
     state.participants = previousParticipants;
     state.competition = previousCompetition;
@@ -1223,6 +1361,7 @@ function renderTopbar(computed) {
     elements.topbarStatus.textContent = isCompetitionActive()
       ? `管理模式 · ${computed.competitorResults.length} 参赛 · ${getSupporters().length} 陪伴`
       : `管理模式 · 参赛 ${getCompetitors().length}/${ACTIVITY.maxParticipants}`;
+    renderSyncStatus();
     return;
   }
 
@@ -1233,6 +1372,7 @@ function renderTopbar(computed) {
   elements.topbarStatus.textContent = isCompetitionActive()
     ? `${getRoleLabel(current)} · ${getRankText(result)} · ${formatRate(result.lossRate)}`
     : `${getRoleLabel(current)} · 参赛 ${getCompetitors().length}/${ACTIVITY.maxParticipants}`;
+  renderSyncStatus();
 }
 
 function renderDashboard(computed) {
