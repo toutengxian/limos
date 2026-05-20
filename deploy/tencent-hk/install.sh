@@ -2,7 +2,7 @@
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/opt/limos}"
-BRANCH="${BRANCH:-develop}"
+BRANCH="${BRANCH:-main}"
 DOMAIN="${DOMAIN:-hk.limos.best}"
 PORT="${PORT:-3000}"
 REPO_URL="${REPO_URL:-https://github.com/toutengxian/limos.git}"
