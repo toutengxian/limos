@@ -21,6 +21,42 @@ const USER_ROLE_COMPETITOR = "competitor";
 const USER_ROLE_SUPPORTER = "supporter";
 const VIEW_SCOPE_ALL = "all";
 const VIEW_SCOPE_COMPETITORS = "competitors";
+const BMI_SCALE_MIN = 16;
+const BMI_SCALE_MAX = 32;
+const BMI_CATEGORIES = [
+  {
+    key: "under",
+    label: "偏瘦",
+    range: "< 18.5",
+    min: Number.NEGATIVE_INFINITY,
+    max: 18.5,
+    summary: "低于中国成人参考下限",
+  },
+  {
+    key: "normal",
+    label: "标准",
+    range: "18.5-23.9",
+    min: 18.5,
+    max: 24,
+    summary: "处在中国成人标准区间",
+  },
+  {
+    key: "over",
+    label: "超重",
+    range: "24.0-27.9",
+    min: 24,
+    max: 28,
+    summary: "进入超重区间，留意趋势",
+  },
+  {
+    key: "obese",
+    label: "肥胖",
+    range: ">= 28.0",
+    min: 28,
+    max: Number.POSITIVE_INFINITY,
+    summary: "进入肥胖区间，建议稳步管理",
+  },
+];
 
 const PARTICIPANT_COLORS = [
   "#456cf6",
@@ -116,6 +152,7 @@ const elements = {
   profileName: $("#profile-name"),
   profileSummary: $("#profile-summary"),
   profileForm: $("#profile-form"),
+  profileHealthPanel: $("#profile-health-panel"),
   profileNameInput: $("#profile-name-input"),
   profileHeightInput: $("#profile-height-input"),
   profileAvatarInput: $("#profile-avatar-input"),
@@ -1576,11 +1613,14 @@ function renderProfile(computed) {
       ? `管理模式 · ${computed.competitorResults.length} 位参赛 · 剩余 ${daysBetween(getTodayISO(), ACTIVITY.endDate)} 天`
       : `管理模式 · 还差 ${ACTIVITY.maxParticipants - getCompetitors().length} 位参赛开局`;
     elements.profileForm.classList.add("hidden");
+    elements.profileHealthPanel.classList.add("hidden");
+    elements.profileHealthPanel.innerHTML = "";
     elements.historyList.innerHTML = `<p class="muted">管理员不能记录体重，只负责查看和维护成员。</p>`;
     return;
   }
 
   elements.profileForm.classList.remove("hidden");
+  elements.profileHealthPanel.classList.remove("hidden");
   const current = getCurrentUser();
   const result = computed.allResults.find((item) => item.id === current.id);
   elements.leaveTeamButton.classList.toggle("hidden", isCompetitionActive());
@@ -1592,6 +1632,7 @@ function renderProfile(computed) {
   elements.profileNameInput.value = current.name;
   elements.profileHeightInput.value = current.heightCm ? formatCompactNumber(current.heightCm, 1) : "";
   renderAvatar(elements.profileAvatarPreview, current);
+  renderHealthPanel(current, result);
 
   const entries = [...current.entries].sort((a, b) => b.date.localeCompare(a.date));
   elements.historyList.innerHTML = entries.length
@@ -1608,6 +1649,75 @@ function renderProfile(computed) {
         `;
       }).join("")
     : `<p class="muted">开局后，这里会记录每次上秤。</p>`;
+}
+
+function renderHealthPanel(participant, result) {
+  const currentWeight = result?.currentWeight || getCurrentWeight(participant);
+  const heightCm = Number(participant?.heightCm) || 0;
+  const bmi = calculateBmi(currentWeight, heightCm);
+  const category = getBmiCategory(bmi);
+  const healthyRange = getHealthyWeightRange(heightCm);
+  const markerPosition = bmi ? `${getBmiGaugePosition(bmi)}%` : "0%";
+  const bmiValue = bmi ? formatNumber(bmi, 1) : "--";
+  const heightText = isValidHeight(heightCm) ? `${formatCompactNumber(heightCm, 1)}cm` : "待补";
+  const currentWeightText = isValidWeight(currentWeight) ? `${formatNumber(currentWeight, 1)}kg` : "--";
+  const healthyRangeText = healthyRange
+    ? `${formatNumber(healthyRange.min, 1)}-${formatNumber(healthyRange.max, 1)}kg`
+    : "补身高后显示";
+  const summaryText = bmi
+    ? category.summary
+    : "补上身高后，会自动计算 BMI 和标准体重区间。";
+
+  elements.profileHealthPanel.innerHTML = `
+    <div class="health-panel-header">
+      <div>
+        <p class="health-eyebrow">个人健康看板</p>
+        <h3>${bmi ? "BMI 身体质量指数" : "先补齐身高"}</h3>
+      </div>
+      <span class="health-badge bmi-${category.key}">${category.label}</span>
+    </div>
+
+    <div class="health-bmi-row">
+      <div class="bmi-orb">
+        <span>BMI</span>
+        <strong>${bmiValue}</strong>
+      </div>
+      <div class="bmi-copy">
+        <strong>${summaryText}</strong>
+        <p>参考分层：偏瘦 &lt;18.5，标准 18.5-23.9，超重 24.0-27.9，肥胖 >=28.0。</p>
+      </div>
+    </div>
+
+    <div class="bmi-gauge-wrap">
+      <div class="bmi-gauge" style="--bmi-left: ${markerPosition}">
+        <span class="bmi-segment bmi-under"></span>
+        <span class="bmi-segment bmi-normal"></span>
+        <span class="bmi-segment bmi-over"></span>
+        <span class="bmi-segment bmi-obese"></span>
+        ${bmi ? `<span class="bmi-marker" aria-label="当前 BMI ${bmiValue}"></span>` : ""}
+      </div>
+      <div class="bmi-scale-labels" aria-hidden="true">
+        <span>18.5</span>
+        <span>24</span>
+        <span>28</span>
+      </div>
+    </div>
+
+    <div class="health-metrics" aria-label="健康指标">
+      <div class="health-metric">
+        <span>身高</span>
+        <strong>${heightText}</strong>
+      </div>
+      <div class="health-metric">
+        <span>当前体重</span>
+        <strong>${currentWeightText}</strong>
+      </div>
+      <div class="health-metric">
+        <span>标准体重区间</span>
+        <strong>${healthyRangeText}</strong>
+      </div>
+    </div>
+  `;
 }
 
 function setTeamAction(action) {
@@ -2508,6 +2618,31 @@ function calculateBmi(weight, heightCm) {
   if (!isValidWeight(weight) || !isValidHeight(heightCm)) return 0;
   const heightMeters = heightCm / 100;
   return round1(weight / (heightMeters * heightMeters));
+}
+
+function getBmiCategory(bmi) {
+  if (!bmi) {
+    return {
+      key: "missing",
+      label: "待完善",
+      range: "",
+      summary: "补上身高后显示 BMI",
+    };
+  }
+  return BMI_CATEGORIES.find((category) => bmi >= category.min && bmi < category.max) || BMI_CATEGORIES[BMI_CATEGORIES.length - 1];
+}
+
+function getBmiGaugePosition(bmi) {
+  return clamp(((bmi - BMI_SCALE_MIN) / (BMI_SCALE_MAX - BMI_SCALE_MIN)) * 100, 0, 100);
+}
+
+function getHealthyWeightRange(heightCm) {
+  if (!isValidHeight(heightCm)) return null;
+  const heightMeters = heightCm / 100;
+  return {
+    min: round1(18.5 * heightMeters * heightMeters),
+    max: round1(23.9 * heightMeters * heightMeters),
+  };
 }
 
 function isValidWeight(value) {
