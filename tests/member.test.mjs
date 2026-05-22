@@ -13,6 +13,7 @@ function participant(id, name, role = "competitor") {
     name,
     color: "#1f7a5c",
     initialWeight: 80,
+    heightCm: 170,
     userRole: role,
     accessCodeHash: `hash-${id}`,
     joinedAt: "2026-05-14T00:00:00.000Z",
@@ -50,6 +51,20 @@ test("joinParticipant rejects duplicate names", () => {
   assert.equal(result.status, 409);
 });
 
+test("joinParticipant requires height", () => {
+  const payload = {
+    competition: { status: "waiting", startedAt: "", maxParticipants: 5 },
+    participants: [],
+  };
+  const missingHeight = participant("p1", "A");
+  delete missingHeight.heightCm;
+
+  const result = joinParticipant(payload, missingHeight);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 400);
+});
+
 test("updateParticipantProfile updates only the target participant", () => {
   const payload = {
     competition: { status: "waiting", startedAt: "", maxParticipants: 5 },
@@ -58,6 +73,7 @@ test("updateParticipantProfile updates only the target participant", () => {
 
   const result = updateParticipantProfile(payload, "p2", {
     name: "B+",
+    heightCm: 168,
     color: "#456cf6",
     avatar: "data:image/png;base64,abc",
   });
@@ -65,6 +81,7 @@ test("updateParticipantProfile updates only the target participant", () => {
   assert.equal(result.ok, true);
   assert.equal(result.payload.participants[0].name, "A");
   assert.equal(result.payload.participants[1].name, "B+");
+  assert.equal(result.payload.participants[1].heightCm, 168);
   assert.equal(result.payload.participants[1].avatar, "data:image/png;base64,abc");
 });
 
