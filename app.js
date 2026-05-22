@@ -1664,6 +1664,8 @@ function renderHealthPanel(participant, result) {
   const healthyRangeText = healthyRange
     ? `${formatNumber(healthyRange.min, 1)}-${formatNumber(healthyRange.max, 1)}kg`
     : "补身高后显示";
+  const sevenDayTrend = getSevenDayWeightTrend(participant, currentWeight);
+  const healthyPosition = getHealthyWeightPosition(currentWeight, healthyRange);
   const summaryText = bmi
     ? category.summary
     : "补上身高后，会自动计算 BMI 和标准体重区间。";
@@ -1715,9 +1717,15 @@ function renderHealthPanel(participant, result) {
         <span>当前体重</span>
         <strong>${currentWeightText}</strong>
       </div>
-      <div class="health-metric">
-        <span>标准体重区间</span>
-        <strong>${healthyRangeText}</strong>
+      <div class="health-metric health-metric-${sevenDayTrend.tone}">
+        <span>7 日趋势</span>
+        <strong>${sevenDayTrend.value}</strong>
+        <small>${sevenDayTrend.note}</small>
+      </div>
+      <div class="health-metric health-metric-${healthyPosition.tone}">
+        <span>健康位置</span>
+        <strong>${healthyPosition.value}</strong>
+        <small>${healthyRangeText}</small>
       </div>
     </div>
   `;
@@ -2648,6 +2656,58 @@ function getHealthyWeightRange(heightCm) {
   };
 }
 
+function getSevenDayWeightTrend(participant, currentWeight) {
+  if (!isValidWeight(currentWeight)) {
+    return {
+      value: "--",
+      note: "记录后显示",
+      tone: "neutral",
+    };
+  }
+
+  const startDate = addDaysISO(getTodayISO(), -6);
+  const startWeight = getWeightAtDate(participant, startDate);
+  const delta = round1(currentWeight - startWeight);
+  if (Math.abs(delta) < 0.05) {
+    return {
+      value: "持平",
+      note: "近 7 天",
+      tone: "neutral",
+    };
+  }
+
+  return {
+    value: delta < 0 ? `减 ${formatNumber(Math.abs(delta), 1)}kg` : `增 ${formatNumber(delta, 1)}kg`,
+    note: "近 7 天",
+    tone: delta < 0 ? "good" : "watch",
+  };
+}
+
+function getHealthyWeightPosition(currentWeight, healthyRange) {
+  if (!isValidWeight(currentWeight) || !healthyRange) {
+    return {
+      value: "待补",
+      tone: "neutral",
+    };
+  }
+  if (currentWeight < healthyRange.min) {
+    return {
+      value: `低 ${formatNumber(healthyRange.min - currentWeight, 1)}kg`,
+      tone: "under",
+    };
+  }
+  if (currentWeight > healthyRange.max) {
+    return {
+      value: `高 ${formatNumber(currentWeight - healthyRange.max, 1)}kg`,
+      tone: "watch",
+    };
+  }
+  return {
+    value: "标准内",
+    tone: "good",
+  };
+}
+
 function isValidWeight(value) {
   return Number.isFinite(value) && value >= 30 && value <= 250;
 }
@@ -2701,6 +2761,18 @@ function getTodayISO() {
   const today = formatter.format(new Date());
   if (today > ACTIVITY.endDate) return ACTIVITY.endDate;
   return today;
+}
+
+function addDaysISO(iso, offset) {
+  const formatter = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const date = new Date(`${iso}T00:00:00+08:00`);
+  date.setDate(date.getDate() + offset);
+  return formatter.format(date);
 }
 
 function getRecentDays(count) {

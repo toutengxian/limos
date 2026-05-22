@@ -1699,7 +1699,7 @@ select.input:hover {
 
 .health-metrics {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 7px;
   margin-top: 15px;
 }
@@ -1733,6 +1733,30 @@ select.input:hover {
   font-weight: 800;
   letter-spacing: 0;
   line-height: 1.2;
+}
+
+.health-metric small {
+  display: block;
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--faint);
+  font-size: 9px;
+  font-weight: 720;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.health-metric-good strong {
+  color: var(--brand);
+}
+
+.health-metric-watch strong {
+  color: var(--money);
+}
+
+.health-metric-under strong {
+  color: var(--blue);
 }
 
 .history-list {
