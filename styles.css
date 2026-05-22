@@ -1459,6 +1459,10 @@ select.input:hover {
   padding: 18px;
 }
 
+.health-panel + .profile-form {
+  margin-top: 14px;
+}
+
 .profile-form .secondary-button + .danger-outline-button {
   margin-top: 12px;
 }
