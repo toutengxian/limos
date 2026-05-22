@@ -21,6 +21,42 @@ const USER_ROLE_COMPETITOR = "competitor";
 const USER_ROLE_SUPPORTER = "supporter";
 const VIEW_SCOPE_ALL = "all";
 const VIEW_SCOPE_COMPETITORS = "competitors";
+const BMI_SCALE_MIN = 16;
+const BMI_SCALE_MAX = 32;
+const BMI_CATEGORIES = [
+  {
+    key: "under",
+    label: "偏瘦",
+    range: "< 18.5",
+    min: Number.NEGATIVE_INFINITY,
+    max: 18.5,
+    summary: "低于中国成人参考下限",
+  },
+  {
+    key: "normal",
+    label: "标准",
+    range: "18.5-23.9",
+    min: 18.5,
+    max: 24,
+    summary: "处在中国成人标准区间",
+  },
+  {
+    key: "over",
+    label: "超重",
+    range: "24.0-27.9",
+    min: 24,
+    max: 28,
+    summary: "进入超重区间，留意趋势",
+  },
+  {
+    key: "obese",
+    label: "肥胖",
+    range: ">= 28.0",
+    min: 28,
+    max: Number.POSITIVE_INFINITY,
+    summary: "进入肥胖区间，建议稳步管理",
+  },
+];
 
 const PARTICIPANT_COLORS = [
   "#456cf6",
@@ -76,6 +112,7 @@ const elements = {
   authSubmit: $("#auth-submit"),
   displayName: $("#display-name"),
   initialWeight: $("#initial-weight"),
+  heightCm: $("#height-cm"),
   avatarInput: $("#avatar-input"),
   avatarPreview: $("#avatar-preview"),
   onboardingForm: $("#onboarding-form"),
@@ -115,7 +152,9 @@ const elements = {
   profileName: $("#profile-name"),
   profileSummary: $("#profile-summary"),
   profileForm: $("#profile-form"),
+  profileHealthPanel: $("#profile-health-panel"),
   profileNameInput: $("#profile-name-input"),
+  profileHeightInput: $("#profile-height-input"),
   profileAvatarInput: $("#profile-avatar-input"),
   profileAvatarPreview: $("#profile-avatar-preview"),
   leaveTeamButton: $("#leave-team-button"),
@@ -520,6 +559,7 @@ function normalizeParticipant(participant, index = 0) {
     name: String(participant.name || "").trim(),
     color: participant.color || PARTICIPANT_COLORS[index % PARTICIPANT_COLORS.length],
     initialWeight: Number(participant.initialWeight) || 0,
+    heightCm: Number(participant.heightCm) || 0,
     avatar: participant.avatar || "",
     userRole: normalizeUserRole(participant.userRole || participant.role),
     accessCodeHash: participant.accessCodeHash || "",
@@ -815,6 +855,7 @@ async function syncRemoteState(options = {}) {
       pendingAvatar
       || elements.displayName.value
       || elements.initialWeight.value
+      || elements.heightCm.value
       || elements.accessCode.value,
     );
     if (!hasJoinDraft) {
@@ -936,6 +977,7 @@ function hydrateOnboardingForm() {
   pendingAvatarColor = "";
   elements.displayName.value = "";
   elements.initialWeight.value = "";
+  elements.heightCm.value = "";
   elements.accessCode.value = "";
   elements.loginCode.value = "";
   elements.adminCode.value = "";
@@ -1000,10 +1042,11 @@ async function submitOnboarding(event) {
 
   const name = elements.displayName.value.trim();
   const initialWeight = Number(elements.initialWeight.value);
+  const heightCm = Number(elements.heightCm.value);
   const accessCode = elements.accessCode.value.trim();
 
-  if (!name || !isValidWeight(initialWeight)) {
-    showToast("填好昵称和初始体重");
+  if (!name || !isValidWeight(initialWeight) || !isValidHeight(heightCm)) {
+    showToast("填好昵称、初始体重和身高");
     return;
   }
 
@@ -1035,6 +1078,7 @@ async function submitOnboarding(event) {
     name,
     color: pendingAvatarColor || PARTICIPANT_COLORS[state.participants.length % PARTICIPANT_COLORS.length],
     initialWeight: round1(initialWeight),
+    heightCm: round1(heightCm),
     avatar: pendingAvatar,
     userRole,
     accessCodeHash,
@@ -1130,6 +1174,7 @@ function getDraftParticipant() {
     name: elements.displayName?.value || "我",
     color: pendingAvatarColor || PARTICIPANT_COLORS[state.participants.length % PARTICIPANT_COLORS.length],
     initialWeight: 0,
+    heightCm: Number(elements.heightCm?.value) || 0,
     avatar: pendingAvatar,
     userRole: joinRole,
     entries: [],
@@ -1187,16 +1232,19 @@ async function submitProfile(event) {
   }
   const participant = getCurrentUser();
   const name = elements.profileNameInput.value.trim();
+  const heightCm = Number(elements.profileHeightInput.value);
 
-  if (!participant || !name) {
-    showToast("昵称不能为空");
+  if (!participant || !name || !isValidHeight(heightCm)) {
+    showToast("昵称和身高都要填好");
     return;
   }
 
   const previousName = participant.name;
+  const previousHeightCm = participant.heightCm;
   const previousAvatar = participant.avatar;
   const previousColor = participant.color;
   participant.name = name;
+  participant.heightCm = round1(heightCm);
   if (pendingProfileAvatar) {
     participant.avatar = pendingProfileAvatar;
     participant.color = pendingProfileAvatarColor || participant.color;
@@ -1207,6 +1255,7 @@ async function submitProfile(event) {
       participantId: participant.id,
       profile: {
         name: participant.name,
+        heightCm: participant.heightCm,
         color: participant.color,
         ...(pendingProfileAvatar ? { avatar: participant.avatar } : {}),
       },
@@ -1214,6 +1263,7 @@ async function submitProfile(event) {
     if (pendingProfileAvatar) pendingAvatarUploadIds.delete(participant.id);
   } catch {
     participant.name = previousName;
+    participant.heightCm = previousHeightCm;
     participant.avatar = previousAvatar;
     participant.color = previousColor;
     renderAll();
@@ -1398,8 +1448,8 @@ function renderDashboard(computed) {
     elements.dashboardMoneyLabel.textContent = "还差";
     elements.dashboardMoney.textContent = `${remaining} 位`;
     elements.dashboardWeightDelta.textContent = isSupporter(current)
-      ? `${formatSignedKg(result.deltaKg)} · 陪伴记录不参与结算`
-      : `初始 ${formatNumber(current.initialWeight, 1)}kg 已锁定`;
+      ? `${formatSignedKg(result.deltaKg)} · ${getBodyStatsText(current, result.currentWeight)}`
+      : `初始 ${formatNumber(current.initialWeight, 1)}kg · ${getBodyStatsText(current, current.initialWeight)}`;
     elements.dashboardGap.textContent = "5 位参赛成员坐满自动开局";
     elements.weightForm.classList.toggle("hidden", isCompetitor(current));
     elements.lastEntryText.textContent = getLastEntryLabel(current, "陪伴用户可以先记录体重");
@@ -1415,7 +1465,7 @@ function renderDashboard(computed) {
   elements.dashboardRate.textContent = formatRate(result.lossRate);
   elements.dashboardRate.classList.toggle("gain", result.lossRate < 0);
   elements.dashboardRate.classList.toggle("loss", result.lossRate >= 0);
-  elements.dashboardWeightDelta.textContent = `${formatSignedKg(result.deltaKg)} · 当前 ${formatNumber(result.currentWeight, 1)}kg`;
+  elements.dashboardWeightDelta.textContent = `${formatSignedKg(result.deltaKg)} · 当前 ${formatNumber(result.currentWeight, 1)}kg · ${getBmiText(current, result.currentWeight)}`;
   elements.dashboardGap.textContent = isSupporter(current)
     ? "陪伴用户不参与奖金结算"
     : result.isLeader
@@ -1563,21 +1613,26 @@ function renderProfile(computed) {
       ? `管理模式 · ${computed.competitorResults.length} 位参赛 · 剩余 ${daysBetween(getTodayISO(), ACTIVITY.endDate)} 天`
       : `管理模式 · 还差 ${ACTIVITY.maxParticipants - getCompetitors().length} 位参赛开局`;
     elements.profileForm.classList.add("hidden");
+    elements.profileHealthPanel.classList.add("hidden");
+    elements.profileHealthPanel.innerHTML = "";
     elements.historyList.innerHTML = `<p class="muted">管理员不能记录体重，只负责查看和维护成员。</p>`;
     return;
   }
 
   elements.profileForm.classList.remove("hidden");
+  elements.profileHealthPanel.classList.remove("hidden");
   const current = getCurrentUser();
   const result = computed.allResults.find((item) => item.id === current.id);
   elements.leaveTeamButton.classList.toggle("hidden", isCompetitionActive());
   renderAvatar(elements.profileAvatar, current);
   elements.profileName.textContent = current.name;
   elements.profileSummary.textContent = isCompetitionActive()
-    ? `${getRoleLabel(current)} · 初始 ${formatNumber(current.initialWeight, 1)}kg · 当前 ${formatNumber(result.currentWeight, 1)}kg · ${formatRate(result.lossRate)}`
-    : `${getRoleLabel(current)} · 初始 ${formatNumber(current.initialWeight, 1)}kg · 还差 ${ACTIVITY.maxParticipants - getCompetitors().length} 位参赛开局`;
+    ? `${getRoleLabel(current)} · ${getHeightText(current)} · 当前 ${formatNumber(result.currentWeight, 1)}kg · ${getBmiText(current, result.currentWeight)}`
+    : `${getRoleLabel(current)} · 初始 ${formatNumber(current.initialWeight, 1)}kg · ${getHeightText(current)} · 还差 ${ACTIVITY.maxParticipants - getCompetitors().length} 位参赛开局`;
   elements.profileNameInput.value = current.name;
+  elements.profileHeightInput.value = current.heightCm ? formatCompactNumber(current.heightCm, 1) : "";
   renderAvatar(elements.profileAvatarPreview, current);
+  renderHealthPanel(current, result);
 
   const entries = [...current.entries].sort((a, b) => b.date.localeCompare(a.date));
   elements.historyList.innerHTML = entries.length
@@ -1587,13 +1642,93 @@ function renderProfile(computed) {
           <div class="history-row">
             <div>
               <strong>${formatDateShort(entry.date)}</strong>
-              <p class="rank-sub">相对初始 ${formatRate(rate)}</p>
+              <p class="rank-sub">相对初始 ${formatRate(rate)} · ${getBmiText(current, entry.weight)}</p>
             </div>
             <strong>${formatNumber(entry.weight, 1)}kg</strong>
           </div>
         `;
       }).join("")
     : `<p class="muted">开局后，这里会记录每次上秤。</p>`;
+}
+
+function renderHealthPanel(participant, result) {
+  const currentWeight = result?.currentWeight || getCurrentWeight(participant);
+  const heightCm = Number(participant?.heightCm) || 0;
+  const bmi = calculateBmi(currentWeight, heightCm);
+  const category = getBmiCategory(bmi);
+  const healthyRange = getHealthyWeightRange(heightCm);
+  const markerPosition = bmi ? `${getBmiGaugePosition(bmi)}%` : "0%";
+  const bmiValue = bmi ? formatNumber(bmi, 1) : "--";
+  const heightText = isValidHeight(heightCm) ? `${formatCompactNumber(heightCm, 1)}cm` : "待补";
+  const currentWeightText = isValidWeight(currentWeight) ? `${formatNumber(currentWeight, 1)}kg` : "--";
+  const healthyRangeText = healthyRange
+    ? `${formatNumber(healthyRange.min, 1)}-${formatNumber(healthyRange.max, 1)}kg`
+    : "补身高后显示";
+  const sevenDayTrend = getSevenDayWeightTrend(participant, currentWeight);
+  const healthyPosition = getHealthyWeightPosition(currentWeight, healthyRange);
+  const summaryText = bmi
+    ? category.summary
+    : "补上身高后，会自动计算 BMI 和标准体重区间。";
+  const categoryRangeText = bmi ? `当前落在 ${category.range}` : "身高 + 体重后自动计算";
+
+  elements.profileHealthPanel.innerHTML = `
+    <div class="health-panel-header">
+      <div>
+        <p class="health-eyebrow">个人健康看板</p>
+        <h3>身体状态</h3>
+      </div>
+      <span class="health-badge">成人 BMI</span>
+    </div>
+
+    <div class="health-bmi-summary">
+      <div class="bmi-readout bmi-${category.key}">
+        <span>BMI</span>
+        <strong>${bmiValue}</strong>
+        <em>${category.label}</em>
+      </div>
+      <div class="bmi-copy">
+        <strong>${summaryText}</strong>
+        <p>${categoryRangeText}</p>
+      </div>
+    </div>
+
+    <div class="bmi-gauge-wrap">
+      <div class="bmi-gauge" style="--bmi-left: ${markerPosition}">
+        <span class="bmi-segment bmi-under"></span>
+        <span class="bmi-segment bmi-normal"></span>
+        <span class="bmi-segment bmi-over"></span>
+        <span class="bmi-segment bmi-obese"></span>
+        ${bmi ? `<span class="bmi-marker" aria-label="当前 BMI ${bmiValue}"></span>` : ""}
+      </div>
+      <div class="bmi-band-labels" aria-hidden="true">
+        <span>偏瘦</span>
+        <span>标准</span>
+        <span>超重</span>
+        <span>肥胖</span>
+      </div>
+    </div>
+
+    <div class="health-metrics" aria-label="健康指标">
+      <div class="health-metric">
+        <span>身高</span>
+        <strong>${heightText}</strong>
+      </div>
+      <div class="health-metric">
+        <span>当前体重</span>
+        <strong>${currentWeightText}</strong>
+      </div>
+      <div class="health-metric health-metric-${sevenDayTrend.tone}">
+        <span>7 日趋势</span>
+        <strong>${sevenDayTrend.value}</strong>
+        <small>${sevenDayTrend.note}</small>
+      </div>
+      <div class="health-metric health-metric-${healthyPosition.tone}">
+        <span>健康位置</span>
+        <strong>${healthyPosition.value}</strong>
+        <small>${healthyRangeText}</small>
+      </div>
+    </div>
+  `;
 }
 
 function setTeamAction(action) {
@@ -1828,7 +1963,7 @@ function waitingListHtml() {
           ${avatarHtml(participant, "avatar-sm")}
           <div>
             <p class="rank-name">${escapeHtml(participant.name)}${participant.id === state.currentUserId ? " · 我" : ""}</p>
-            <p class="rank-sub">初始 ${formatNumber(participant.initialWeight, 1)}kg · 参赛席</p>
+            <p class="rank-sub">初始 ${formatNumber(participant.initialWeight, 1)}kg · ${getHeightText(participant)} · 参赛席</p>
           </div>
         </div>
         <div class="rank-metric">
@@ -1852,7 +1987,7 @@ function waitingListHtml() {
           ${avatarHtml(participant, "avatar-sm")}
           <div>
             <p class="rank-name">${escapeHtml(participant.name)}${participant.id === state.currentUserId ? " · 我" : ""}${roleBadgeHtml(participant)}</p>
-            <p class="rank-sub">初始 ${formatNumber(participant.initialWeight, 1)}kg · 陪伴记录</p>
+            <p class="rank-sub">初始 ${formatNumber(participant.initialWeight, 1)}kg · ${getHeightText(participant)} · 陪伴记录</p>
           </div>
         </div>
         <div class="rank-metric">
@@ -1918,7 +2053,7 @@ function rankRowHtml(item, computed, compact) {
         ${avatarHtml(item, compact ? "avatar-sm" : "avatar-md")}
         <div>
           <p class="rank-name">${escapeHtml(item.name)}${item.id === state.currentUserId ? " · 我" : ""}${roleBadgeHtml(item)}</p>
-          <p class="rank-sub">${formatSignedKg(item.deltaKg)} · ${compact ? moneyText : `当前 ${formatNumber(item.currentWeight, 1)}kg`}</p>
+          <p class="rank-sub">${formatSignedKg(item.deltaKg)} · ${compact ? moneyText : `当前 ${formatNumber(item.currentWeight, 1)}kg · ${getBmiText(item, item.currentWeight)}`}</p>
         </div>
       </div>
       <div class="rank-metric">
@@ -2490,8 +2625,95 @@ function calculateLossRate(initialWeight, currentWeight) {
   return round2(((initialWeight - currentWeight) / initialWeight) * 100);
 }
 
+function calculateBmi(weight, heightCm) {
+  if (!isValidWeight(weight) || !isValidHeight(heightCm)) return 0;
+  const heightMeters = heightCm / 100;
+  return round1(weight / (heightMeters * heightMeters));
+}
+
+function getBmiCategory(bmi) {
+  if (!bmi) {
+    return {
+      key: "missing",
+      label: "待完善",
+      range: "",
+      summary: "补上身高后显示 BMI",
+    };
+  }
+  return BMI_CATEGORIES.find((category) => bmi >= category.min && bmi < category.max) || BMI_CATEGORIES[BMI_CATEGORIES.length - 1];
+}
+
+function getBmiGaugePosition(bmi) {
+  return clamp(((bmi - BMI_SCALE_MIN) / (BMI_SCALE_MAX - BMI_SCALE_MIN)) * 100, 0, 100);
+}
+
+function getHealthyWeightRange(heightCm) {
+  if (!isValidHeight(heightCm)) return null;
+  const heightMeters = heightCm / 100;
+  return {
+    min: round1(18.5 * heightMeters * heightMeters),
+    max: round1(23.9 * heightMeters * heightMeters),
+  };
+}
+
+function getSevenDayWeightTrend(participant, currentWeight) {
+  if (!isValidWeight(currentWeight)) {
+    return {
+      value: "--",
+      note: "记录后显示",
+      tone: "neutral",
+    };
+  }
+
+  const startDate = addDaysISO(getTodayISO(), -6);
+  const startWeight = getWeightAtDate(participant, startDate);
+  const delta = round1(currentWeight - startWeight);
+  if (Math.abs(delta) < 0.05) {
+    return {
+      value: "持平",
+      note: "近 7 天",
+      tone: "neutral",
+    };
+  }
+
+  return {
+    value: delta < 0 ? `减 ${formatNumber(Math.abs(delta), 1)}kg` : `增 ${formatNumber(delta, 1)}kg`,
+    note: "近 7 天",
+    tone: delta < 0 ? "good" : "watch",
+  };
+}
+
+function getHealthyWeightPosition(currentWeight, healthyRange) {
+  if (!isValidWeight(currentWeight) || !healthyRange) {
+    return {
+      value: "待补",
+      tone: "neutral",
+    };
+  }
+  if (currentWeight < healthyRange.min) {
+    return {
+      value: `低 ${formatNumber(healthyRange.min - currentWeight, 1)}kg`,
+      tone: "under",
+    };
+  }
+  if (currentWeight > healthyRange.max) {
+    return {
+      value: `高 ${formatNumber(currentWeight - healthyRange.max, 1)}kg`,
+      tone: "watch",
+    };
+  }
+  return {
+    value: "标准内",
+    tone: "good",
+  };
+}
+
 function isValidWeight(value) {
   return Number.isFinite(value) && value >= 30 && value <= 250;
+}
+
+function isValidHeight(value) {
+  return Number.isFinite(value) && value >= 100 && value <= 230;
 }
 
 function isValidAccessCode(value) {
@@ -2541,6 +2763,18 @@ function getTodayISO() {
   return today;
 }
 
+function addDaysISO(iso, offset) {
+  const formatter = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const date = new Date(`${iso}T00:00:00+08:00`);
+  date.setDate(date.getDate() + offset);
+  return formatter.format(date);
+}
+
 function getRecentDays(count) {
   const formatter = new Intl.DateTimeFormat("sv-SE", {
     timeZone: "Asia/Shanghai",
@@ -2581,12 +2815,33 @@ function formatSignedKg(value) {
   return `${prefix} ${formatNumber(Math.abs(value), 1)}kg`;
 }
 
+function getBodyStatsText(participant, weight) {
+  return `${getHeightText(participant)} · ${getBmiText(participant, weight)}`;
+}
+
+function getHeightText(participant) {
+  if (!isValidHeight(participant?.heightCm)) return "身高待补";
+  return `${formatCompactNumber(participant.heightCm, 1)}cm`;
+}
+
+function getBmiText(participant, weight) {
+  const bmi = calculateBmi(weight, participant?.heightCm);
+  return bmi ? `BMI ${formatNumber(bmi, 1)}` : "BMI 待补";
+}
+
 function formatMoney(value) {
   return Math.round(value).toLocaleString("zh-CN");
 }
 
 function formatNumber(value, digits) {
   return Number(value).toFixed(digits);
+}
+
+function formatCompactNumber(value, maxDigits) {
+  return Number(value).toLocaleString("zh-CN", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: maxDigits,
+  });
 }
 
 function round1(value) {

@@ -28,6 +28,10 @@ function isValidWeight(value) {
   return Number.isFinite(value) && value >= 30 && value <= 250;
 }
 
+function isValidHeight(value) {
+  return Number.isFinite(value) && value >= 100 && value <= 230;
+}
+
 function normalizeRole(role) {
   return role === USER_ROLE_SUPPORTER ? USER_ROLE_SUPPORTER : USER_ROLE_COMPETITOR;
 }
@@ -38,11 +42,13 @@ function isCompetitor(participant) {
 
 function normalizeParticipant(input) {
   const initialWeight = Number(input?.initialWeight);
+  const heightCm = Number(input?.heightCm);
   return {
     id: String(input?.id || ""),
     name: String(input?.name || "").trim(),
     color: String(input?.color || ""),
     initialWeight: Math.round(initialWeight * 10) / 10,
+    heightCm: Math.round(heightCm * 10) / 10,
     avatar: input?.avatar || "",
     userRole: normalizeRole(input?.userRole || input?.role),
     accessCodeHash: String(input?.accessCodeHash || ""),
@@ -71,7 +77,7 @@ function normalizePayload(payload) {
 export function joinParticipant(payload, participantInput) {
   const nextPayload = normalizePayload(payload || getDefaultPayload());
   const participant = normalizeParticipant(participantInput);
-  if (!participant.id || !participant.name || !isValidWeight(participant.initialWeight) || !participant.accessCodeHash) {
+  if (!participant.id || !participant.name || !isValidWeight(participant.initialWeight) || !isValidHeight(participant.heightCm) || !participant.accessCodeHash) {
     return { ok: false, status: 400, error: "invalid_participant" };
   }
 
@@ -93,12 +99,14 @@ export function updateParticipantProfile(payload, participantId, profileInput) {
   if (!participant) return { ok: false, status: 404, error: "participant_not_found" };
 
   const name = String(profileInput?.name || "").trim();
-  if (!name) return { ok: false, status: 400, error: "invalid_profile" };
+  const heightCm = Number(profileInput?.heightCm);
+  if (!name || !isValidHeight(heightCm)) return { ok: false, status: 400, error: "invalid_profile" };
 
   const nameTaken = nextPayload.participants.some((item) => item.id !== participantId && item.name === name);
   if (nameTaken) return { ok: false, status: 409, error: "participant_name_exists" };
 
   participant.name = name;
+  participant.heightCm = Math.round(heightCm * 10) / 10;
   if (profileInput?.color) participant.color = String(profileInput.color);
   if (profileInput?.avatar) participant.avatar = profileInput.avatar;
   return { ok: true, payload: normalizePayload(nextPayload) };
