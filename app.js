@@ -1699,10 +1699,10 @@ function renderHealthPanel(participant, result) {
         ${bmi ? `<span class="bmi-marker" aria-label="当前 BMI ${bmiValue}"></span>` : ""}
       </div>
       <div class="bmi-band-labels" aria-hidden="true">
-        <span><strong>偏瘦</strong><small>&lt;18.5</small></span>
-        <span><strong>标准</strong><small>18.5-23.9</small></span>
-        <span><strong>超重</strong><small>24.0-27.9</small></span>
-        <span><strong>肥胖</strong><small>&gt;=28.0</small></span>
+        <span>偏瘦</span>
+        <span>标准</span>
+        <span>超重</span>
+        <span>肥胖</span>
       </div>
     </div>
 
