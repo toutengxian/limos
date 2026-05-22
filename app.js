@@ -1667,24 +1667,26 @@ function renderHealthPanel(participant, result) {
   const summaryText = bmi
     ? category.summary
     : "补上身高后，会自动计算 BMI 和标准体重区间。";
+  const categoryRangeText = bmi ? `当前落在 ${category.range}` : "身高 + 体重后自动计算";
 
   elements.profileHealthPanel.innerHTML = `
     <div class="health-panel-header">
       <div>
         <p class="health-eyebrow">个人健康看板</p>
-        <h3>${bmi ? "BMI 身体质量指数" : "先补齐身高"}</h3>
+        <h3>身体状态</h3>
       </div>
-      <span class="health-badge bmi-${category.key}">${category.label}</span>
+      <span class="health-badge">成人 BMI</span>
     </div>
 
-    <div class="health-bmi-row">
-      <div class="bmi-orb">
+    <div class="health-bmi-summary">
+      <div class="bmi-readout bmi-${category.key}">
         <span>BMI</span>
         <strong>${bmiValue}</strong>
+        <em>${category.label}</em>
       </div>
       <div class="bmi-copy">
         <strong>${summaryText}</strong>
-        <p>参考分层：偏瘦 &lt;18.5，标准 18.5-23.9，超重 24.0-27.9，肥胖 >=28.0。</p>
+        <p>${categoryRangeText}</p>
       </div>
     </div>
 
@@ -1696,10 +1698,11 @@ function renderHealthPanel(participant, result) {
         <span class="bmi-segment bmi-obese"></span>
         ${bmi ? `<span class="bmi-marker" aria-label="当前 BMI ${bmiValue}"></span>` : ""}
       </div>
-      <div class="bmi-scale-labels" aria-hidden="true">
-        <span>18.5</span>
-        <span>24</span>
-        <span>28</span>
+      <div class="bmi-band-labels" aria-hidden="true">
+        <span><strong>偏瘦</strong><small>&lt;18.5</small></span>
+        <span><strong>标准</strong><small>18.5-23.9</small></span>
+        <span><strong>超重</strong><small>24.0-27.9</small></span>
+        <span><strong>肥胖</strong><small>&gt;=28.0</small></span>
       </div>
     </div>
 
