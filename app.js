@@ -89,6 +89,8 @@ let syncStatus = {
 };
 let trendHoverIndex = null;
 let trendChartMeta = null;
+let trendAutoScrollToLatest = true;
+let trendScrollFrame = 0;
 const avatarThemeColorCache = new Map();
 const avatarHydrationInFlight = new Set();
 const pendingAvatarUploadIds = new Set();
@@ -130,6 +132,8 @@ const elements = {
   dashboardWeightDelta: $("#dashboard-weight-delta"),
   dashboardGap: $("#dashboard-gap"),
   daysLeft: $("#days-left"),
+  seasonProgressLabel: $("#season-progress-label"),
+  seasonProgressFill: $("#season-progress-fill"),
   weightForm: $("#weight-form"),
   weightInput: $("#weight-input"),
   lastEntryText: $("#last-entry-text"),
@@ -138,6 +142,11 @@ const elements = {
   inviteLink: $("#invite-link"),
   copyInviteButton: $("#copy-invite-button"),
   dashboardLeaderboard: $("#dashboard-leaderboard"),
+  trendTotalScope: $("#trend-total-scope"),
+  trendTotalLoss: $("#trend-total-loss"),
+  trendTotalNote: $("#trend-total-note"),
+  trendScroll: $("#trend-scroll"),
+  trendAxisCanvas: $("#trend-axis-canvas"),
   trendCanvas: $("#trend-canvas"),
   trendLegend: $("#trend-legend"),
   activityHeatmap: $("#activity-heatmap"),
@@ -215,6 +224,13 @@ function bindEvents() {
   elements.trendCanvas.addEventListener("pointermove", handleTrendPointer);
   elements.trendCanvas.addEventListener("pointerdown", handleTrendPointer);
   elements.trendCanvas.addEventListener("pointerleave", clearTrendPointer);
+  elements.trendScroll.addEventListener("scroll", () => {
+    if (trendScrollFrame) return;
+    trendScrollFrame = requestAnimationFrame(() => {
+      trendScrollFrame = 0;
+      drawTrendChart(getComputed());
+    });
+  }, { passive: true });
   elements.mainApp.addEventListener("click", handleRosterActionClick);
   elements.authTabs.forEach((button) => {
     button.addEventListener("click", () => setAuthMode(button.dataset.authMode));
@@ -1440,7 +1456,7 @@ function renderDashboard(computed) {
   if (!isCompetitionActive()) {
     const remaining = ACTIVITY.maxParticipants - getCompetitors().length;
     setTeamAction("share");
-    elements.daysLeft.textContent = "小队集结中";
+    updateSeasonProgress(false);
     elements.dashboardRank.textContent = `${getCompetitors().length}/${ACTIVITY.maxParticipants}`;
     elements.dashboardRate.textContent = isSupporter(current) ? formatRate(result.lossRate) : "--";
     elements.dashboardRate.classList.toggle("gain", isSupporter(current) && result.lossRate < 0);
@@ -1460,7 +1476,7 @@ function renderDashboard(computed) {
   setTeamAction("rank");
   elements.weightForm.classList.remove("hidden");
 
-  elements.daysLeft.textContent = `剩余 ${daysBetween(getTodayISO(), ACTIVITY.endDate)} 天`;
+  updateSeasonProgress(true);
   elements.dashboardRank.textContent = isCompetitor(current) ? result.competitionRank : result.allRank;
   elements.dashboardRate.textContent = formatRate(result.lossRate);
   elements.dashboardRate.classList.toggle("gain", result.lossRate < 0);
@@ -1497,7 +1513,7 @@ function renderAdminDashboard(computed) {
   if (!isCompetitionActive()) {
     const remaining = ACTIVITY.maxParticipants - getCompetitors().length;
     setTeamAction("share");
-    elements.daysLeft.textContent = "小队集结中";
+    updateSeasonProgress(false);
     elements.dashboardRate.textContent = "--";
     elements.dashboardRate.classList.remove("gain", "loss");
     elements.dashboardMoneyLabel.textContent = "还差";
@@ -1510,7 +1526,7 @@ function renderAdminDashboard(computed) {
 
   setTeamAction("rank");
   const leader = computed.leaders[0];
-  elements.daysLeft.textContent = `剩余 ${daysBetween(getTodayISO(), ACTIVITY.endDate)} 天`;
+  updateSeasonProgress(true);
   elements.dashboardRate.textContent = formatRate(leader.lossRate);
   elements.dashboardRate.classList.toggle("gain", leader.lossRate < 0);
   elements.dashboardRate.classList.toggle("loss", leader.lossRate >= 0);
@@ -1521,7 +1537,40 @@ function renderAdminDashboard(computed) {
   elements.dashboardLeaderboard.innerHTML = computed.displayResults.slice(0, 5).map((item) => rankRowHtml(item, computed, true)).join("");
 }
 
+function updateSeasonProgress(isActive) {
+  if (!elements.daysLeft || !elements.seasonProgressFill || !elements.seasonProgressLabel) return;
+  if (!isActive) {
+    elements.daysLeft.textContent = "小队集结中";
+    elements.seasonProgressLabel.textContent = `满 ${ACTIVITY.maxParticipants} 人开局 · 9 月 30 日收官`;
+    elements.seasonProgressFill.style.width = "0%";
+    return;
+  }
+
+  const startDate = getCompetitionStartDate();
+  const today = getTodayISO();
+  const totalDays = Math.max(1, daysBetween(startDate, ACTIVITY.endDate));
+  const remainingDays = daysBetween(today, ACTIVITY.endDate);
+  const elapsedDays = clamp(daysBetween(startDate, today), 0, totalDays);
+  const progress = clamp((elapsedDays / totalDays) * 100, 0, 100);
+
+  elements.daysLeft.textContent = `剩余 ${remainingDays} 天`;
+  elements.seasonProgressLabel.textContent = `已走 ${Math.round(progress)}% · 9 月 30 日收官`;
+  elements.seasonProgressFill.style.width = `${progress}%`;
+}
+
+function scrollTrendToLatest() {
+  const scroll = elements.trendScroll;
+  if (!scroll || !isCompetitionActive() || !trendAutoScrollToLatest) return;
+  requestAnimationFrame(() => {
+    if (trendHoverIndex !== null) return;
+    scroll.scrollLeft = scroll.scrollWidth;
+    trendAutoScrollToLatest = false;
+    drawTrendChart(getComputed());
+  });
+}
+
 function renderTrend(computed) {
+  renderTrendSummary(computed);
   if (!isCompetitionActive()) {
     elements.chartRangeLabel.textContent = "小队集结中";
     drawTrendChart(computed);
@@ -1535,6 +1584,7 @@ function renderTrend(computed) {
     ? `${timeline[1].label} 至 ${timeline.at(-1).label}`
     : "起始至今日";
   drawTrendChart(computed);
+  scrollTrendToLatest();
   elements.trendLegend.innerHTML = computed.displayResults
     .map((item) => {
       const payout = computed.payouts[item.id];
@@ -1839,7 +1889,11 @@ function navigate(page) {
 
   window.scrollTo({ top: 0, behavior: "instant" });
   if (page === "trend") {
-    requestAnimationFrame(() => drawTrendChart(getComputed()));
+    trendAutoScrollToLatest = true;
+    requestAnimationFrame(() => {
+      drawTrendChart(getComputed());
+      scrollTrendToLatest();
+    });
   }
 }
 
@@ -2095,6 +2149,22 @@ function renderHeatmap(computed) {
   }).join("");
 }
 
+function renderTrendSummary(computed) {
+  if (!elements.trendTotalLoss) return;
+  const results = computed.displayResults;
+  const totalDelta = round1(results.reduce((sum, item) => sum + item.deltaKg, 0));
+  const averageDelta = results.length ? round1(totalDelta / results.length) : 0;
+  const isNetGain = totalDelta < 0;
+  const scopeText = viewScope === VIEW_SCOPE_COMPETITORS ? "参赛累计" : "小队累计";
+  const memberText = viewScope === VIEW_SCOPE_COMPETITORS ? `参赛 ${results.length} 人` : `全部 ${results.length} 人`;
+  const averageText = isNetGain ? `人均净增 ${formatNumber(Math.abs(averageDelta), 1)}kg` : `人均净减 ${formatNumber(Math.abs(averageDelta), 1)}kg`;
+
+  elements.trendTotalScope.textContent = isNetGain ? `${scopeText}净增` : `${scopeText}净减`;
+  elements.trendTotalLoss.textContent = `${formatNumber(Math.abs(totalDelta), 1)}kg`;
+  elements.trendTotalLoss.classList.toggle("is-gain", isNetGain);
+  elements.trendTotalNote.textContent = results.length ? `${memberText} · ${averageText}` : "当前范围暂无成员";
+}
+
 function handleTrendPointer(event) {
   if (!trendChartMeta || trendChartMeta.timelineLength <= 1) return;
   const rect = elements.trendCanvas.getBoundingClientRect();
@@ -2112,7 +2182,18 @@ function clearTrendPointer() {
 
 function drawTrendChart(computed) {
   const canvas = elements.trendCanvas;
+  const axisCanvas = elements.trendAxisCanvas;
   if (!canvas || !canvas.offsetWidth) return;
+
+  const timeline = isCompetitionActive() ? getTimeline() : [];
+  const scroll = elements.trendScroll || canvas.parentElement;
+  const visibleWidth = scroll?.clientWidth || canvas.offsetWidth;
+  const pad = { top: 24, right: 24, bottom: 42, left: 8 };
+  const minPointGap = 46;
+  const chartWidth = isCompetitionActive()
+    ? Math.max(visibleWidth, pad.left + pad.right + Math.max(260, (timeline.length - 1) * minPointGap))
+    : visibleWidth;
+  canvas.style.width = `${Math.ceil(chartWidth)}px`;
 
   const ctx = canvas.getContext("2d");
   const dpr = window.devicePixelRatio || 1;
@@ -2121,6 +2202,17 @@ function drawTrendChart(computed) {
   canvas.height = Math.round(rect.height * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, rect.width, rect.height);
+
+  let axisCtx = null;
+  let axisRect = null;
+  if (axisCanvas) {
+    axisRect = axisCanvas.getBoundingClientRect();
+    axisCanvas.width = Math.round(axisRect.width * dpr);
+    axisCanvas.height = Math.round(axisRect.height * dpr);
+    axisCtx = axisCanvas.getContext("2d");
+    axisCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    axisCtx.clearRect(0, 0, axisRect.width, axisRect.height);
+  }
 
   if (!isCompetitionActive()) {
     trendChartMeta = null;
@@ -2132,7 +2224,6 @@ function drawTrendChart(computed) {
     return;
   }
 
-  const timeline = getTimeline();
   const series = computed.displayResults.map((participant) => ({
     ...participant,
     points: timeline.map((tick) => calculateLossRate(participant.initialWeight, getWeightAtTick(participant, tick))),
@@ -2150,12 +2241,21 @@ function drawTrendChart(computed) {
     maxValue += 0.8;
   }
 
-  const pad = { top: 24, right: 20, bottom: 38, left: 56 };
   const width = rect.width - pad.left - pad.right;
   const height = rect.height - pad.top - pad.bottom;
   const xFor = (index) => pad.left + (timeline.length === 1 ? width : (width * index) / (timeline.length - 1));
   const yFor = (value) => pad.top + ((maxValue - value) / (maxValue - minValue)) * height;
-  trendChartMeta = { pad, width, timelineLength: timeline.length };
+  const viewportLeft = scroll?.scrollLeft || 0;
+  const viewportWidth = scroll?.clientWidth || rect.width;
+  const isScrollableChart = scroll ? scroll.scrollWidth > scroll.clientWidth + 2 : false;
+  trendChartMeta = {
+    pad,
+    width,
+    timelineLength: timeline.length,
+    viewportLeft,
+    viewportRight: viewportLeft + viewportWidth,
+    viewportWidth,
+  };
 
   ctx.lineWidth = 1;
   ctx.font = "11px Inter, system-ui, sans-serif";
@@ -2171,9 +2271,13 @@ function drawTrendChart(computed) {
     ctx.lineTo(rect.width - pad.right, y);
     ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillStyle = "#738091";
-    ctx.textAlign = "right";
-    ctx.fillText(`${formatNumber(value, 1)}%`, pad.left - 12, y);
+    if (axisCtx && axisRect) {
+      axisCtx.fillStyle = "#738091";
+      axisCtx.textAlign = "right";
+      axisCtx.font = "11px Inter, system-ui, sans-serif";
+      axisCtx.textBaseline = "middle";
+      axisCtx.fillText(`${formatNumber(value, 1)}%`, axisRect.width - 10, y);
+    }
   }
 
   if (minValue < 0 && maxValue > 0) {
@@ -2186,8 +2290,18 @@ function drawTrendChart(computed) {
     ctx.stroke();
   }
 
+  const xTickGap = timeline.length > 1 ? width / (timeline.length - 1) : width;
+  const labelStep = Math.max(1, Math.ceil(54 / Math.max(xTickGap, 1)));
   timeline.forEach((tick, index) => {
+    const isEdge = index === 0 || index === timeline.length - 1;
+    if (!isEdge && index % labelStep !== 0) return;
     const x = xFor(index);
+    if (isScrollableChart) {
+      const labelGuard = 48;
+      const isVisible = x >= viewportLeft + labelGuard && x <= viewportLeft + viewportWidth - labelGuard;
+      const isVisibleEdge = isEdge && x >= viewportLeft + 8 && x <= viewportLeft + viewportWidth - 8;
+      if (!isVisible && !isVisibleEdge) return;
+    }
     ctx.fillStyle = "#738091";
     ctx.textAlign = index === 0 ? "left" : index === timeline.length - 1 ? "right" : "center";
     ctx.fillText(tick.label, x, rect.height - 16);
@@ -2256,9 +2370,12 @@ function drawTrendTooltip(ctx, rect, timeline, series, xFor, yFor) {
     }))
     .sort((a, b) => b.value - a.value);
   const visibleRows = rows.slice(0, 5);
-  const cardWidth = Math.min(188, rect.width - 34);
+  const viewportLeft = trendChartMeta.viewportLeft || 0;
+  const viewportRight = trendChartMeta.viewportRight || rect.width;
+  const viewportWidth = trendChartMeta.viewportWidth || rect.width;
+  const cardWidth = Math.min(188, viewportWidth - 34);
   const cardHeight = 34 + visibleRows.length * 20;
-  const cardX = x + cardWidth + 16 < rect.width ? x + 12 : Math.max(12, x - cardWidth - 12);
+  const cardX = x + cardWidth + 16 < viewportRight ? x + 12 : Math.max(viewportLeft + 12, x - cardWidth - 12);
   const cardY = 18;
 
   ctx.save();

@@ -62,7 +62,7 @@ function setStaticHeaders(response, filename) {
     return;
   }
 
-  if (filename === "index.html") {
+  if (filename === "index.html" || filename === "app.js" || filename === "styles.css") {
     response.setHeader("Cache-Control", "no-cache");
     return;
   }

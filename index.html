@@ -153,9 +153,14 @@
 
         <section id="page-dashboard" class="page page-active">
           <div class="hero-panel">
-            <div class="hero-meta">
-              <span id="days-left" class="pill">剩余 -- 天</span>
-              <span class="pill pill-light">9 月 30 日收官</span>
+            <div class="season-progress" aria-label="活动进度">
+              <div class="season-progress-copy">
+                <span id="days-left">剩余 -- 天</span>
+                <span id="season-progress-label">9 月 30 日收官</span>
+              </div>
+              <div class="season-progress-track" aria-hidden="true">
+                <span id="season-progress-fill"></span>
+              </div>
             </div>
             <div class="hero-main">
               <div>
@@ -225,8 +230,18 @@
               <span id="chart-range-label" class="muted">--</span>
             </div>
           </div>
+          <div class="trend-summary-card">
+            <div>
+              <span id="trend-total-scope">小队累计净减</span>
+              <strong id="trend-total-loss">--kg</strong>
+            </div>
+            <small id="trend-total-note">随筛选范围更新</small>
+          </div>
           <div class="chart-panel">
-            <canvas id="trend-canvas" aria-label="小瘦包成员减重率折线图"></canvas>
+            <canvas id="trend-axis-canvas" aria-hidden="true"></canvas>
+            <div id="trend-scroll" class="chart-scroll">
+              <canvas id="trend-canvas" aria-label="小瘦包成员减重率折线图"></canvas>
+            </div>
           </div>
           <div id="trend-legend" class="legend-list"></div>
           <section class="section-block">

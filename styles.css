@@ -805,6 +805,57 @@ select.input:hover {
   margin-bottom: 18px;
 }
 
+.season-progress {
+  display: grid;
+  gap: 9px;
+  margin-bottom: 18px;
+}
+
+.season-progress-copy {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.season-progress-copy span:first-child {
+  color: var(--brand-strong);
+  font-weight: 760;
+}
+
+.season-progress-copy span:last-child {
+  color: var(--ink-soft);
+  text-align: right;
+  font-weight: 640;
+}
+
+.season-progress-track {
+  position: relative;
+  overflow: hidden;
+  height: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0.18)),
+    rgba(16, 20, 24, 0.08);
+  box-shadow: inset 0 1px 3px rgba(16, 20, 24, 0.07), 0 8px 18px rgba(38, 52, 46, 0.08);
+}
+
+.season-progress-track span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background:
+    linear-gradient(90deg, rgba(216, 255, 79, 0.92), rgba(31, 122, 92, 0.86)),
+    var(--brand);
+  box-shadow: 0 0 18px rgba(31, 122, 92, 0.18);
+  transition: width 280ms ease;
+}
+
 .pill {
   display: inline-flex;
   align-items: center;
@@ -1245,18 +1296,85 @@ select.input:hover {
   font-weight: 600;
 }
 
+.trend-summary-card {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 12px 0 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--glass-line);
+  border-radius: 20px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.34) 58%, rgba(232, 243, 237, 0.44)),
+    rgba(255, 255, 255, 0.58);
+  box-shadow: 0 16px 34px rgba(38, 52, 46, 0.09), inset 0 1px 0 rgba(255, 255, 255, 0.78);
+  -webkit-backdrop-filter: blur(22px) saturate(1.3);
+  backdrop-filter: blur(22px) saturate(1.3);
+}
+
+.trend-summary-card span,
+.trend-summary-card small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.trend-summary-card strong {
+  display: block;
+  margin-top: 3px;
+  color: var(--brand);
+  font-size: 32px;
+  font-weight: 820;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+.trend-summary-card strong.is-gain {
+  color: var(--danger);
+}
+
+.trend-summary-card small {
+  max-width: 44%;
+  text-align: right;
+  line-height: 1.35;
+}
+
 .chart-panel {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  align-items: stretch;
   padding: 8px 0 2px;
   overflow: hidden;
   border-radius: 24px;
 }
 
+.chart-scroll {
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.chart-scroll::-webkit-scrollbar {
+  display: none;
+}
+
 #trend-canvas {
   display: block;
   width: 100%;
+  min-width: 100%;
   height: 334px;
   cursor: crosshair;
-  touch-action: pan-y;
+  touch-action: pan-x pan-y;
+}
+
+#trend-axis-canvas {
+  display: block;
+  width: 64px;
+  height: 334px;
+  pointer-events: none;
 }
 
 .legend-list {
