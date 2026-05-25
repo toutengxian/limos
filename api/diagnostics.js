@@ -40,8 +40,7 @@ export default async function handler(request, response) {
   }
 
   const config = getEnvConfig();
-  const version = process.env.VERCEL_GIT_COMMIT_SHA
-    || process.env.LIMOS_RELEASE
+  const version = process.env.LIMOS_RELEASE
     || process.env.npm_package_version
     || "local";
 

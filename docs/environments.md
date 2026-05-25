@@ -1,52 +1,29 @@
 # Limos Environments
 
-Limos uses two isolated environments:
+Limos 只保留两套环境：开发和生产。
 
-- `production`: real users, real prize pool, domain `limos.best`, branch `main`
-- `development`: test users and test data only, branch `develop`
-
-The rule is simple: development must never point at the production Supabase project or production `LIMOS_STATE_ID`.
-
-## Isolation Model
-
-Use separate Supabase projects.
+## Boundary
 
 | Layer | Development | Production |
 | --- | --- | --- |
-| Git branch | `develop` | `main` |
-| Vercel env scope | Preview + Development | Production |
-| Domain | Vercel preview URL or `dev.limos.best` | `limos.best` |
-| Supabase project | `limos-dev` | current production project |
+| Purpose | 开发测试 | 真实用户 |
+| Branch | `develop` | `main` |
+| Domain | 本地或临时测试域名 | `limos.top`, `www.limos.top` |
+| App host | Local Node server | 腾讯云北京轻量服务器 |
+| Supabase project | Dev project | Prod project |
 | State id | `limos-2026-dev` | `limos-2026` |
-| Data | fake/test users | real users |
+| Data | 测试数据 | 真实用户和奖池数据 |
 
-Do not use a single Supabase project for both environments unless this is only a temporary emergency. Separate projects are the clean boundary.
+硬规则：开发环境不能连接生产 Supabase，不能使用 `LIMOS_STATE_ID=limos-2026`。
 
-## Supabase Setup
+## Local Development
 
-1. Create a second Supabase project for development, for example `limos-dev`.
-2. Open the SQL Editor in that dev project.
-3. Run [`supabase.sql`](../supabase.sql).
-4. Copy the dev project URL and publishable key.
-
-Production keeps using the existing Supabase project and existing state id `limos-2026`.
-
-## Vercel Environment Variables
-
-Set these in Vercel Project Settings -> Environment Variables.
-
-Production scope:
-
-```text
-LIMOS_ENV=production
-LIMOS_STORAGE_MODE=api
-LIMOS_STATE_ID=limos-2026
-LIMOS_SUPABASE_URL=https://YOUR_PROD_PROJECT_ID.supabase.co
-LIMOS_SUPABASE_ANON_KEY=YOUR_PROD_SUPABASE_PUBLISHABLE_KEY
-LIMOS_ADMIN_CODE_HASH=SHA256_OF_YOUR_PROD_ADMIN_CODE
+```bash
+cp .env.development.example .env.local
+npm run dev
 ```
 
-Preview and Development scopes:
+`.env.local` 应该使用 dev Supabase：
 
 ```text
 LIMOS_ENV=development
@@ -55,70 +32,54 @@ LIMOS_STATE_ID=limos-2026-dev
 LIMOS_SUPABASE_URL=https://YOUR_DEV_PROJECT_ID.supabase.co
 LIMOS_SUPABASE_ANON_KEY=YOUR_DEV_SUPABASE_PUBLISHABLE_KEY
 LIMOS_ADMIN_CODE_HASH=SHA256_OF_YOUR_DEV_ADMIN_CODE
+PORT=3000
+HOST=127.0.0.1
 ```
 
-The build runs `scripts/check-environment.mjs`. If a non-production Vercel build points at `LIMOS_STATE_ID=limos-2026`, the build fails before deployment.
+## Production
 
-## Local Development
+生产只部署 `main` 分支内容。
 
-For API-backed local development:
+服务器环境变量在 `/opt/limos/.env.production`：
+
+```text
+LIMOS_ENV=production
+LIMOS_STORAGE_MODE=api
+LIMOS_STATE_ID=limos-2026
+LIMOS_SUPABASE_URL=https://YOUR_PROD_PROJECT_ID.supabase.co
+LIMOS_SUPABASE_ANON_KEY=YOUR_PROD_SUPABASE_PUBLISHABLE_KEY
+LIMOS_ADMIN_CODE_HASH=SHA256_OF_YOUR_PROD_ADMIN_CODE
+PORT=3000
+HOST=127.0.0.1
+```
+
+生产启动由 systemd 管理：
 
 ```bash
-cp .env.development.example .env.local
-npm run dev
+systemctl status limos
+systemctl status nginx
 ```
 
-`npm run dev` uses Vercel Dev so `/api/state` works locally.
+## Release Flow
 
-For static single-device preview only:
+1. 在 `develop` 开发。
+2. 本地运行 `npm run check`。
+3. 合并到 `main`。
+4. 运行 `npm run deploy:prod`，把 `main` 打包并部署到腾讯云大陆服务器。
+5. 验证 `https://limos.top/healthz` 和 `https://limos.top/api/diagnostics`。
 
-```bash
-npm run serve
-```
-
-Static preview does not run the API route and is not suitable for multi-user testing.
-
-## Daily Development Flow
-
-1. Work on `develop`.
-2. Push `develop` to GitHub.
-3. Test the Vercel preview deployment or branch domain.
-4. Confirm the preview uses the dev Supabase project.
-5. Promote only after testing passes.
-
-Recommended branch setup:
+推荐命令：
 
 ```bash
 git checkout develop
-git pull --ff-only origin develop
+npm run check
+git push origin develop
+
+git checkout main
+git pull --ff-only origin main
+git merge --no-ff develop -m "Promote develop to production"
+git push origin main
+npm run deploy:prod
 ```
 
-## One-Command Promotion
-
-After dev testing is done and the working tree is clean:
-
-```bash
-npm run promote:prod
-```
-
-The script:
-
-1. Requires the current branch to be `develop`.
-2. Runs `npm run check`.
-3. Pushes `develop`.
-4. Merges `develop` into `main`.
-5. Pushes `main`.
-
-Vercel production deployment should then start from the `main` push.
-
-If the merge conflicts, stop and resolve the conflict manually. Do not force push production.
-
-## Optional Dev Domain
-
-If you want a stable dev URL, add a branch domain in Vercel:
-
-```text
-dev.limos.best -> develop
-```
-
-Keep `limos.best` attached only to production.
+部署命令见 [production-mainland.md](./production-mainland.md)。

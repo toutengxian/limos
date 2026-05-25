@@ -5,8 +5,7 @@ const supabaseKey = env.LIMOS_SUPABASE_SERVICE_ROLE_KEY || env.LIMOS_SUPABASE_AN
 const storageMode = env.LIMOS_STORAGE_MODE || (supabaseUrl && supabaseKey ? "api" : "local");
 const stateId = env.LIMOS_STATE_ID || (storageMode === "api" ? "limos-2026" : "limos-local");
 const adminCodeHash = env.LIMOS_ADMIN_CODE_HASH || "";
-const vercelEnv = env.VERCEL_ENV || "";
-const limosEnv = env.LIMOS_ENV || (vercelEnv === "production" ? "production" : vercelEnv ? "development" : "local");
+const limosEnv = env.LIMOS_ENV || "local";
 
 const errors = [];
 const warnings = [];
@@ -24,10 +23,6 @@ if (storageMode === "api") {
   if (isPlaceholder(supabaseKey)) errors.push("LIMOS_SUPABASE_ANON_KEY or LIMOS_SUPABASE_SERVICE_ROLE_KEY is required for api storage.");
   if (isPlaceholder(adminCodeHash)) errors.push("LIMOS_ADMIN_CODE_HASH is required for api storage.");
   if (!stateId) errors.push("LIMOS_STATE_ID is required for api storage.");
-}
-
-if (vercelEnv && storageMode !== "api") {
-  errors.push("Vercel deployments must use LIMOS_STORAGE_MODE=api.");
 }
 
 if (limosEnv === "production" && /dev|preview|test/i.test(stateId)) {
