@@ -1,7 +1,7 @@
 window.LIMOS_CONFIG = {
   environment: "development",
   // Use "local" for single-device static preview mode.
-  // Use "api" for Vercel dev/preview/production so browsers only talk to this app's API.
+  // Use "api" for Node-backed environments so browsers only talk to this app's API.
   storageMode: "api",
   stateId: "limos-2026-dev",
   apiEndpoint: "/api/state",
