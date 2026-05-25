@@ -154,6 +154,19 @@ ln -s "$RELEASE_DIR" "$APP_DIR"
 systemctl restart limos
 systemctl reload nginx
 
+for attempt in $(seq 1 20); do
+  if curl -fsS http://127.0.0.1:3000/healthz >/dev/null; then
+    break
+  fi
+  if [ "$attempt" -eq 20 ]; then
+    echo "Limos did not become healthy after restart." >&2
+    systemctl --no-pager --full status limos || true
+    journalctl -u limos -n 80 --no-pager || true
+    exit 1
+  fi
+  sleep 1
+done
+
 curl -fsS http://127.0.0.1:3000/healthz
 curl -fsS http://127.0.0.1:3000/api/diagnostics
 rm -f "$ARCHIVE"
