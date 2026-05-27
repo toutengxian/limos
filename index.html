@@ -183,15 +183,22 @@
           </div>
 
           <form id="weight-form" class="panel weight-panel">
-            <div>
-              <h2>今天上秤</h2>
-              <p id="last-entry-text" class="muted">--</p>
+            <div class="weight-card-heading">
+              <div>
+                <h2 id="weight-card-title">今天上秤</h2>
+                <p id="last-entry-text" class="muted">--</p>
+              </div>
+              <button id="weight-edit-button" class="text-button edit-chip hidden" type="button">改一下</button>
             </div>
-            <div class="weight-input-row">
+            <div id="weight-input-row" class="weight-input-row">
               <input id="weight-input" class="weight-input" type="text" inputmode="decimal" autocomplete="off" placeholder="0.0" />
               <span>kg</span>
             </div>
-            <button class="secondary-button" type="submit">更新体重</button>
+            <div id="weight-checkin-card" class="weight-checkin-card hidden">
+              <strong id="weight-checkin-value">--kg</strong>
+              <span id="weight-checkin-meta">--</span>
+            </div>
+            <button id="weight-submit-button" class="secondary-button" type="submit">更新体重</button>
           </form>
 
           <section class="section-block">

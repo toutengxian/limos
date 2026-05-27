@@ -82,6 +82,7 @@ let toastTimer = 0;
 let remoteSyncTimer = 0;
 let avatarHydrationTimer = 0;
 let mutationSyncInFlight = false;
+let editingTodayWeight = false;
 let syncStatus = {
   kind: "idle",
   message: "",
@@ -91,6 +92,7 @@ let trendHoverIndex = null;
 let trendChartMeta = null;
 let trendAutoScrollToLatest = true;
 let trendScrollFrame = 0;
+let trendFocusParticipantId = "";
 const avatarThemeColorCache = new Map();
 const avatarHydrationInFlight = new Set();
 const pendingAvatarUploadIds = new Set();
@@ -135,7 +137,14 @@ const elements = {
   seasonProgressLabel: $("#season-progress-label"),
   seasonProgressFill: $("#season-progress-fill"),
   weightForm: $("#weight-form"),
+  weightCardTitle: $("#weight-card-title"),
   weightInput: $("#weight-input"),
+  weightInputRow: $("#weight-input-row"),
+  weightCheckinCard: $("#weight-checkin-card"),
+  weightCheckinValue: $("#weight-checkin-value"),
+  weightCheckinMeta: $("#weight-checkin-meta"),
+  weightSubmitButton: $("#weight-submit-button"),
+  weightEditButton: $("#weight-edit-button"),
   lastEntryText: $("#last-entry-text"),
   teamActionButton: $("#team-action-button"),
   invitePanel: $("#invite-panel"),
@@ -210,6 +219,11 @@ function bindEvents() {
   }));
   elements.onboardingForm.addEventListener("submit", submitOnboarding);
   elements.weightForm.addEventListener("submit", submitWeight);
+  elements.weightEditButton.addEventListener("click", () => {
+    editingTodayWeight = true;
+    renderDashboard(getComputed());
+    elements.weightInput.focus();
+  });
   elements.profileForm.addEventListener("submit", submitProfile);
   elements.leaveTeamButton.addEventListener("click", leaveTeam);
   elements.resetButton.addEventListener("click", logout);
@@ -224,6 +238,7 @@ function bindEvents() {
   elements.trendCanvas.addEventListener("pointermove", handleTrendPointer);
   elements.trendCanvas.addEventListener("pointerdown", handleTrendPointer);
   elements.trendCanvas.addEventListener("pointerleave", clearTrendPointer);
+  elements.trendLegend.addEventListener("click", handleTrendLegendClick);
   elements.trendScroll.addEventListener("scroll", () => {
     if (trendScrollFrame) return;
     trendScrollFrame = requestAnimationFrame(() => {
@@ -1226,6 +1241,7 @@ async function submitWeight(event) {
   }
 
   const entry = upsertEntry(participant, getTodayISO(), round1(weight));
+  editingTodayWeight = false;
   saveLocalState(state);
   elements.weightInput.value = "";
   renderAll();
@@ -1468,7 +1484,7 @@ function renderDashboard(computed) {
       : `初始 ${formatNumber(current.initialWeight, 1)}kg · ${getBodyStatsText(current, current.initialWeight)}`;
     elements.dashboardGap.textContent = "5 位参赛成员坐满自动开局";
     elements.weightForm.classList.toggle("hidden", isCompetitor(current));
-    elements.lastEntryText.textContent = getLastEntryLabel(current, "陪伴用户可以先记录体重");
+    renderWeightCard(current, "陪伴用户可以先记录体重");
     elements.dashboardLeaderboard.innerHTML = waitingListHtml();
     return;
   }
@@ -1499,7 +1515,7 @@ function renderDashboard(computed) {
     elements.dashboardMoney.textContent = `¥${formatMoney(payout.pay)}`;
   }
 
-  elements.lastEntryText.textContent = getLastEntryLabel(current, "还没有上秤记录");
+  renderWeightCard(current, "还没有上秤记录");
 
   elements.dashboardLeaderboard.innerHTML = computed.displayResults.slice(0, 5).map((item) => rankRowHtml(item, computed, true)).join("");
 }
@@ -1535,6 +1551,36 @@ function renderAdminDashboard(computed) {
   elements.dashboardWeightDelta.textContent = `当前领跑：${computed.leaders.map((item) => item.name).join("、")}`;
   elements.dashboardGap.textContent = "只读模式，不能记录体重";
   elements.dashboardLeaderboard.innerHTML = computed.displayResults.slice(0, 5).map((item) => rankRowHtml(item, computed, true)).join("");
+}
+
+function renderWeightCard(participant, emptyText) {
+  const today = getTodayISO();
+  const todayEntry = getEntryOnDate(participant, today);
+  const showEditor = !todayEntry || editingTodayWeight;
+  const weekStart = getWeekStartISO(today);
+  const streak = getCurrentCheckinStreak(participant, today);
+  const weekCount = getWeekCheckinCount(participant, weekStart);
+
+  elements.weightForm.classList.toggle("is-checked", Boolean(todayEntry) && !showEditor);
+  elements.weightCardTitle.textContent = todayEntry && !showEditor ? "今日已打卡" : "今天上秤";
+  elements.lastEntryText.textContent = todayEntry && !showEditor
+    ? "今天已记录"
+    : getLastEntryLabel(participant, emptyText);
+  elements.weightInputRow.classList.toggle("hidden", !showEditor);
+  elements.weightSubmitButton.classList.toggle("hidden", !showEditor);
+  elements.weightEditButton.classList.toggle("hidden", showEditor || !todayEntry);
+  elements.weightCheckinCard.classList.toggle("hidden", showEditor || !todayEntry);
+
+  if (showEditor) {
+    if (todayEntry && !elements.weightInput.value) {
+      elements.weightInput.value = formatNumber(todayEntry.weight, 1);
+    }
+    return;
+  }
+
+  elements.weightInput.value = "";
+  elements.weightCheckinValue.textContent = `${formatNumber(todayEntry.weight, 1)}kg`;
+  elements.weightCheckinMeta.textContent = `连续 ${streak} 天 · 本周 ${weekCount} 次`;
 }
 
 function updateSeasonProgress(isActive) {
@@ -1587,22 +1633,15 @@ function renderTrend(computed) {
   scrollTrendToLatest();
   elements.trendLegend.innerHTML = computed.displayResults
     .map((item) => {
-      const payout = computed.payouts[item.id];
-      const moneyText = isSupporter(item)
-        ? "陪伴不结算"
-        : payout.status === "win" ? `预计得 ¥${formatMoney(payout.prize)}` : `预计付 ¥${formatMoney(payout.pay)}`;
       return `
-        <div class="legend-row ${item.id === state.currentUserId ? "is-me" : ""}">
-          <div class="legend-left">
-            <span class="color-dot" style="background:${item.color}"></span>
-            ${avatarHtml(item, "avatar-sm")}
-            <div>
-              <p class="rank-name">${escapeHtml(item.name)}${roleBadgeHtml(item)}</p>
-              <p class="rank-sub">${formatSignedKg(item.deltaKg)} · ${moneyText}</p>
-            </div>
-          </div>
-          <strong class="${item.lossRate < 0 ? "gain" : "loss"}">${formatRate(item.lossRate)}</strong>
-        </div>
+        <button class="legend-chip ${item.id === state.currentUserId ? "is-me" : ""} ${trendFocusParticipantId === item.id ? "is-active" : ""}" type="button" data-trend-member="${escapeHtml(item.id)}" style="--member-color:${item.color}">
+          <span class="legend-chip-dot"></span>
+          ${avatarHtml(item, "avatar-sm")}
+          <span class="legend-chip-copy">
+            <strong>${escapeHtml(item.name)}</strong>
+            <small>${formatRate(item.lossRate)} · ${formatSignedKg(item.deltaKg)}</small>
+          </span>
+        </button>
       `;
     })
     .join("");
@@ -1652,6 +1691,46 @@ function renderRankPage(computed) {
     .join("");
 
   elements.rankList.innerHTML = computed.displayResults.map((item) => rankRowHtml(item, computed, false)).join("");
+}
+
+function calculateStreakForDates(dateSet, endDate) {
+  let cursor = endDate;
+  let streak = 0;
+  while (dateSet.has(cursor)) {
+    streak += 1;
+    cursor = addDaysISO(cursor, -1);
+  }
+  return streak;
+}
+
+function getCheckinEntries(participant) {
+  return Array.isArray(participant?.entries)
+    ? participant.entries.filter((entry) => entry?.date && Number(entry.weight) > 0)
+    : [];
+}
+
+function getCheckinDateSet(participant) {
+  return new Set(getCheckinEntries(participant).map((entry) => entry.date));
+}
+
+function getWeekCheckinCount(participant, weekStart) {
+  const weekEnd = addDaysISO(weekStart, 6);
+  return [...getCheckinDateSet(participant)].filter((date) => date >= weekStart && date <= weekEnd).length;
+}
+
+function getCurrentCheckinStreak(participant, refDate = getTodayISO()) {
+  const dateSet = getCheckinDateSet(participant);
+  if (!dateSet.size) return 0;
+  const yesterday = addDaysISO(refDate, -1);
+  const streakEnd = dateSet.has(refDate) ? refDate : yesterday;
+  return dateSet.has(streakEnd) ? calculateStreakForDates(dateSet, streakEnd) : 0;
+}
+
+function getWeekStartISO(iso) {
+  const date = new Date(`${iso}T00:00:00+08:00`);
+  const day = date.getDay();
+  const offset = day === 0 ? -6 : 1 - day;
+  return addDaysISO(iso, offset);
 }
 
 function renderProfile(computed) {
@@ -1709,7 +1788,6 @@ function renderHealthPanel(participant, result) {
   const healthyRange = getHealthyWeightRange(heightCm);
   const markerPosition = bmi ? `${getBmiGaugePosition(bmi)}%` : "0%";
   const bmiValue = bmi ? formatNumber(bmi, 1) : "--";
-  const heightText = isValidHeight(heightCm) ? `${formatCompactNumber(heightCm, 1)}cm` : "待补";
   const currentWeightText = isValidWeight(currentWeight) ? `${formatNumber(currentWeight, 1)}kg` : "--";
   const healthyRangeText = healthyRange
     ? `${formatNumber(healthyRange.min, 1)}-${formatNumber(healthyRange.max, 1)}kg`
@@ -1720,6 +1798,7 @@ function renderHealthPanel(participant, result) {
     ? category.summary
     : "补上身高后，会自动计算 BMI 和标准体重区间。";
   const categoryRangeText = bmi ? `当前落在 ${category.range}` : "身高 + 体重后自动计算";
+  const markerColor = getBmiStatusColor(category.key);
 
   elements.profileHealthPanel.innerHTML = `
     <div class="health-panel-header">
@@ -1743,7 +1822,7 @@ function renderHealthPanel(participant, result) {
     </div>
 
     <div class="bmi-gauge-wrap">
-      <div class="bmi-gauge" style="--bmi-left: ${markerPosition}">
+      <div class="bmi-gauge" style="--bmi-left: ${markerPosition}; --bmi-marker-color: ${markerColor}">
         <span class="bmi-segment bmi-under"></span>
         <span class="bmi-segment bmi-normal"></span>
         <span class="bmi-segment bmi-over"></span>
@@ -1760,10 +1839,6 @@ function renderHealthPanel(participant, result) {
 
     <div class="health-metrics" aria-label="健康指标">
       <div class="health-metric">
-        <span>身高</span>
-        <strong>${heightText}</strong>
-      </div>
-      <div class="health-metric">
         <span>当前体重</span>
         <strong>${currentWeightText}</strong>
       </div>
@@ -1773,9 +1848,9 @@ function renderHealthPanel(participant, result) {
         <small>${sevenDayTrend.note}</small>
       </div>
       <div class="health-metric health-metric-${healthyPosition.tone}">
-        <span>健康位置</span>
-        <strong>${healthyPosition.value}</strong>
-        <small>${healthyRangeText}</small>
+        <span>标准体重</span>
+        <strong>${healthyRangeText}</strong>
+        <small>${healthyPosition.value}</small>
       </div>
     </div>
   `;
@@ -2180,6 +2255,14 @@ function clearTrendPointer() {
   drawTrendChart(getComputed());
 }
 
+function handleTrendLegendClick(event) {
+  const button = event.target.closest("[data-trend-member]");
+  if (!button) return;
+  const participantId = button.dataset.trendMember;
+  trendFocusParticipantId = trendFocusParticipantId === participantId ? "" : participantId;
+  renderTrend(getComputed());
+}
+
 function drawTrendChart(computed) {
   const canvas = elements.trendCanvas;
   const axisCanvas = elements.trendAxisCanvas;
@@ -2307,28 +2390,31 @@ function drawTrendChart(computed) {
     ctx.fillText(tick.label, x, rect.height - 16);
   });
 
+  const hasFocusedSeries = Boolean(trendFocusParticipantId && series.some((participant) => participant.id === trendFocusParticipantId));
   series.slice().reverse().forEach((participant) => {
     const isLeader = computed.leaders.some((leader) => leader.id === participant.id);
+    const isFocused = participant.id === trendFocusParticipantId;
     const coordinates = participant.points.map((point, index) => ({
       x: xFor(index),
       y: yFor(point),
       value: point,
     }));
     ctx.strokeStyle = participant.color;
-    ctx.lineWidth = isLeader ? 3.5 : 2;
-    ctx.globalAlpha = isLeader ? 1 : 0.68;
+    ctx.lineWidth = isFocused ? 3.6 : isLeader ? 2.8 : 1.8;
+    ctx.globalAlpha = hasFocusedSeries && !isFocused ? 0.16 : isFocused || isLeader ? 1 : 0.58;
     drawSmoothPath(ctx, coordinates);
     ctx.stroke();
 
     coordinates.forEach(({ x, y }, index) => {
       const isHoveredPoint = trendHoverIndex === index;
+      const pointRadius = isHoveredPoint || isFocused ? 4.8 : isLeader ? 3.8 : 3;
       ctx.fillStyle = "#ffffff";
       ctx.beginPath();
-      ctx.arc(x, y, isHoveredPoint ? 5.5 : isLeader ? 4.5 : 3.5, 0, Math.PI * 2);
+      ctx.arc(x, y, pointRadius + 1.2, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = participant.color;
       ctx.beginPath();
-      ctx.arc(x, y, isHoveredPoint ? 3.6 : isLeader ? 3 : 2.2, 0, Math.PI * 2);
+      ctx.arc(x, y, pointRadius - 0.8, 0, Math.PI * 2);
       ctx.fill();
     });
     ctx.globalAlpha = 1;
@@ -2517,6 +2603,12 @@ function getCurrentWeight(participant) {
 function getWeightAtDate(participant, date) {
   const entries = [...participant.entries].filter((entry) => entry.date <= date).sort((a, b) => b.date.localeCompare(a.date));
   return entries[0]?.weight ?? participant.initialWeight;
+}
+
+function getEntryOnDate(participant, date) {
+  return Array.isArray(participant?.entries)
+    ? participant.entries.find((entry) => entry.date === date)
+    : null;
 }
 
 function getWeightAtTick(participant, tick) {
@@ -2762,6 +2854,14 @@ function getBmiCategory(bmi) {
 
 function getBmiGaugePosition(bmi) {
   return clamp(((bmi - BMI_SCALE_MIN) / (BMI_SCALE_MAX - BMI_SCALE_MIN)) * 100, 0, 100);
+}
+
+function getBmiStatusColor(key) {
+  if (key === "under") return "#456cf6";
+  if (key === "over") return "#b8872d";
+  if (key === "obese") return "#d84a5f";
+  if (key === "normal") return "#1f7a5c";
+  return "#9aa3ad";
 }
 
 function getHealthyWeightRange(heightCm) {
