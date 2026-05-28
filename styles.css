@@ -1382,9 +1382,11 @@ select.input:hover {
 }
 
 .trend-summary-card small {
-  max-width: 44%;
+  max-width: 56%;
   text-align: right;
   line-height: 1.35;
+  overflow-wrap: normal;
+  word-break: keep-all;
 }
 
 .chart-panel {

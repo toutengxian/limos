@@ -58,6 +58,27 @@ const BMI_CATEGORIES = [
   },
 ];
 
+const WEIGHT_EQUIVALENTS = [
+  { min: 15, max: 17, name: "杰拉达狒狒", averageKg: 15.96 },
+  { min: 17, max: 19, name: "几内亚狒狒", averageKg: 18.03 },
+  { min: 19, max: 21, name: "斯氏瞪羚", averageKg: 20 },
+  { min: 21, max: 23, name: "非洲野犬", averageKg: 22 },
+  { min: 23, max: 25, name: "细角瞪羚", averageKg: 24.65 },
+  { min: 25, max: 27, name: "巨獭", averageKg: 26 },
+  { min: 27, max: 29, name: "长颈羚", averageKg: 28.05 },
+  { min: 29, max: 31, name: "比利牛斯臆羚", averageKg: 30 },
+  { min: 31, max: 33, name: "北方毛鼻袋熊", averageKg: 31.85 },
+  { min: 33, max: 35, name: "跳羚", averageKg: 33.57 },
+  { min: 35, max: 37, name: "印度羚", averageKg: 36.3 },
+  { min: 37, max: 39, name: "赛加羚羊", averageKg: 37.73 },
+  { min: 39, max: 41, name: "赫氏海豚", averageKg: 40 },
+  { min: 41, max: 43, name: "索氏瞪羚", averageKg: 41.58 },
+  { min: 43, max: 45, name: "南苇羚", averageKg: 43.29 },
+  { min: 45, max: 47, name: "维萨亚斑鹿", averageKg: 46.48 },
+  { min: 47, max: 49, name: "水豚", averageKg: 48.15 },
+  { min: 49, max: 50, name: "菲律宾鹿", averageKg: 49.46 },
+];
+
 const PARTICIPANT_COLORS = [
   "#456cf6",
   "#1f7a5c",
@@ -2233,11 +2254,30 @@ function renderTrendSummary(computed) {
   const scopeText = viewScope === VIEW_SCOPE_COMPETITORS ? "参赛累计" : "小队累计";
   const memberText = viewScope === VIEW_SCOPE_COMPETITORS ? `参赛 ${results.length} 人` : `全部 ${results.length} 人`;
   const averageText = isNetGain ? `人均净增 ${formatNumber(Math.abs(averageDelta), 1)}kg` : `人均净减 ${formatNumber(Math.abs(averageDelta), 1)}kg`;
+  const animalText = isNetGain ? "" : getWeightEquivalentText(Math.abs(totalDelta));
+  const noteParts = [memberText, averageText, animalText].filter(Boolean);
 
   elements.trendTotalScope.textContent = isNetGain ? `${scopeText}净增` : `${scopeText}净减`;
   elements.trendTotalLoss.textContent = `${formatNumber(Math.abs(totalDelta), 1)}kg`;
   elements.trendTotalLoss.classList.toggle("is-gain", isNetGain);
-  elements.trendTotalNote.textContent = results.length ? `${memberText} · ${averageText}` : "当前范围暂无成员";
+  elements.trendTotalNote.textContent = results.length ? noteParts.join(" · ") : "当前范围暂无成员";
+}
+
+function getWeightEquivalentText(weightKg) {
+  if (!Number.isFinite(weightKg) || weightKg <= 0) return "";
+  const first = WEIGHT_EQUIVALENTS[0];
+  const last = WEIGHT_EQUIVALENTS[WEIGHT_EQUIVALENTS.length - 1];
+
+  if (weightKg < first.min) {
+    return `再减 ${formatNumber(first.averageKg - weightKg, 1)}kg ≈ 一只${first.name}`;
+  }
+
+  const match = WEIGHT_EQUIVALENTS.find((item) => (
+    weightKg >= item.min && (weightKg < item.max || item === last)
+  ));
+
+  if (match) return `相当于一只${match.name}`;
+  return `已经超过一只${last.name}`;
 }
 
 function handleTrendPointer(event) {
