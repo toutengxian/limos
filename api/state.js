@@ -1,48 +1,35 @@
 import {
   createPayloadEtag,
-  fetchState,
-  fetchWeightEntryRows,
   findParticipantAvatar,
   getDefaultPayload,
-  getEnvConfig,
-  hasSupabaseConfig,
   mergeWeightEntriesIntoPayload,
   mergePayloadForWrite,
-  readRequestBody,
   stripPayloadAvatars,
+} from "./payload-utils.js";
+import { readRequestBody } from "./request-utils.js";
+import {
+  fetchState,
+  fetchWeightEntryRows,
+  getEnvConfig,
+  hasSupabaseConfig,
   writeState,
-} from "./state-store.js";
-
-function json(response, statusCode, body, headers = {}) {
-  response.statusCode = statusCode;
-  response.setHeader("Content-Type", "application/json; charset=utf-8");
-  response.setHeader("Cache-Control", headers["Cache-Control"] || "no-store");
-  Object.entries(headers).forEach(([key, value]) => {
-    if (key !== "Cache-Control") response.setHeader(key, value);
-  });
-  response.end(JSON.stringify(body));
-}
-
-function notModified(response, etag) {
-  response.statusCode = 304;
-  response.setHeader("Cache-Control", "no-cache");
-  response.setHeader("ETag", etag);
-  response.end();
-}
+} from "./supabase-store.js";
+import { sendJson, sendMethodNotAllowed, sendNotModified } from "./http-utils.js";
 
 export default async function handler(request, response) {
   const config = getEnvConfig();
 
   if (!hasSupabaseConfig(config)) {
-    json(response, 500, { error: "missing_supabase_config" });
+    sendJson(response, 500, { error: "missing_supabase_config" });
     return;
   }
 
   try {
     if (request.method === "GET") {
       const requestUrl = new URL(request.url || "/", "http://localhost");
-      const payload = await fetchState(config);
-      if (payload) {
+      const storedPayload = await fetchState(config);
+      if (storedPayload) {
+        const payload = structuredClone(storedPayload);
         mergeWeightEntriesIntoPayload(payload, await fetchWeightEntryRows(config));
         const avatarParticipantId = requestUrl.searchParams.get("avatar");
         if (avatarParticipantId) {
@@ -50,11 +37,11 @@ export default async function handler(request, response) {
           const avatarBody = { id: avatarParticipantId, avatar };
           const avatarEtag = createPayloadEtag(avatarBody);
           if (request.headers["if-none-match"] === avatarEtag) {
-            notModified(response, avatarEtag);
+            sendNotModified(response, avatarEtag);
             return;
           }
 
-          json(response, avatar ? 200 : 404, avatarBody, {
+          sendJson(response, avatar ? 200 : 404, avatarBody, {
             "Cache-Control": "no-cache",
             ETag: avatarEtag,
           });
@@ -64,11 +51,11 @@ export default async function handler(request, response) {
         const publicPayload = stripPayloadAvatars(payload);
         const etag = createPayloadEtag(publicPayload);
         if (request.headers["if-none-match"] === etag) {
-          notModified(response, etag);
+          sendNotModified(response, etag);
           return;
         }
 
-        json(response, 200, { payload: publicPayload }, {
+        sendJson(response, 200, { payload: publicPayload }, {
           "Cache-Control": "no-cache",
           ETag: etag,
         });
@@ -77,7 +64,7 @@ export default async function handler(request, response) {
 
       const defaultPayload = getDefaultPayload();
       await writeState(config, defaultPayload);
-      json(response, 200, { payload: defaultPayload }, {
+      sendJson(response, 200, { payload: defaultPayload }, {
         "Cache-Control": "no-cache",
         ETag: createPayloadEtag(stripPayloadAvatars(defaultPayload)),
       });
@@ -87,23 +74,22 @@ export default async function handler(request, response) {
     if (request.method === "PUT") {
       const body = await readRequestBody(request);
       if (!body?.payload || typeof body.payload !== "object") {
-        json(response, 400, { error: "invalid_payload" });
+        sendJson(response, 400, { error: "invalid_payload" });
         return;
       }
 
       const existingPayload = await fetchState(config, { forceFresh: true });
       const mergedPayload = mergePayloadForWrite(existingPayload, body.payload);
       await writeState(config, mergedPayload);
-      json(response, 200, { ok: true }, {
+      sendJson(response, 200, { ok: true }, {
         ETag: createPayloadEtag(stripPayloadAvatars(mergedPayload)),
       });
       return;
     }
 
-    response.setHeader("Allow", "GET, PUT");
-    json(response, 405, { error: "method_not_allowed" });
+    sendMethodNotAllowed(response, ["GET", "PUT"]);
   } catch (error) {
     console.error(error);
-    json(response, 502, { error: "state_sync_failed" });
+    sendJson(response, 502, { error: "state_sync_failed" });
   }
 }

@@ -5,7 +5,7 @@ import {
   joinParticipant,
   removeParticipant,
   updateParticipantProfile,
-} from "../api/member.js";
+} from "../api/member-domain.js";
 
 function participant(id, name, role = "competitor") {
   return {
@@ -37,6 +37,26 @@ test("joinParticipant starts the competition when the fifth competitor joins", (
   assert.equal(result.ok, true);
   assert.equal(result.payload.competition.status, "active");
   assert.equal(result.payload.participants.filter((item) => item.entries.length === 1).length, 5);
+});
+
+test("joinParticipant uses Beijing date when the competition starts", () => {
+  const payload = {
+    competition: { status: "waiting", startedAt: "", maxParticipants: 5 },
+    participants: [
+      participant("p1", "A"),
+      participant("p2", "B"),
+      participant("p3", "C"),
+      participant("p4", "D"),
+    ],
+  };
+
+  const result = joinParticipant(payload, participant("p5", "E"), {
+    now: new Date("2026-05-13T16:30:00.000Z"),
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.payload.competition.startedAt, "2026-05-14");
+  assert.equal(result.payload.participants[0].entries[0].date, "2026-05-14");
 });
 
 test("joinParticipant rejects duplicate names", () => {

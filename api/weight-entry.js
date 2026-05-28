@@ -1,25 +1,18 @@
 import {
   createPayloadEtag,
-  fetchState,
   getDefaultPayload,
-  getEnvConfig,
-  hasSupabaseConfig,
-  readRequestBody,
   stripPayloadAvatars,
   upsertPayloadWeightEntry,
+} from "./payload-utils.js";
+import { readRequestBody } from "./request-utils.js";
+import {
+  fetchState,
+  getEnvConfig,
+  hasSupabaseConfig,
   writeWeightEntryRow,
   writeState,
-} from "./state-store.js";
-
-function json(response, statusCode, body, headers = {}) {
-  response.statusCode = statusCode;
-  response.setHeader("Content-Type", "application/json; charset=utf-8");
-  response.setHeader("Cache-Control", headers["Cache-Control"] || "no-store");
-  Object.entries(headers).forEach(([key, value]) => {
-    if (key !== "Cache-Control") response.setHeader(key, value);
-  });
-  response.end(JSON.stringify(body));
-}
+} from "./supabase-store.js";
+import { sendJson, sendMethodNotAllowed } from "./http-utils.js";
 
 function isValidDate(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
@@ -47,13 +40,12 @@ export default async function handler(request, response) {
   const config = getEnvConfig();
 
   if (!hasSupabaseConfig(config)) {
-    json(response, 500, { error: "missing_supabase_config" });
+    sendJson(response, 500, { error: "missing_supabase_config" });
     return;
   }
 
   if (request.method !== "POST") {
-    response.setHeader("Allow", "POST");
-    json(response, 405, { error: "method_not_allowed" });
+    sendMethodNotAllowed(response, ["POST"]);
     return;
   }
 
@@ -61,29 +53,29 @@ export default async function handler(request, response) {
     const body = await readRequestBody(request);
     const { participantId, entry } = normalizeEntry(body);
     if (!participantId || !isValidDate(entry.date) || !isValidWeight(entry.weight)) {
-      json(response, 400, { error: "invalid_weight_entry" });
+      sendJson(response, 400, { error: "invalid_weight_entry" });
+      return;
+    }
+
+    const payload = structuredClone(await fetchState(config, { forceFresh: true }) || getDefaultPayload());
+    const updated = upsertPayloadWeightEntry(payload, participantId, entry);
+    if (!updated) {
+      sendJson(response, 404, { error: "participant_not_found" });
       return;
     }
 
     const wroteEntryRow = await writeWeightEntryRow(config, participantId, entry);
     if (wroteEntryRow) {
-      json(response, 200, { ok: true, mode: "entry" });
-      return;
-    }
-
-    const payload = await fetchState(config, { forceFresh: true }) || getDefaultPayload();
-    const updated = upsertPayloadWeightEntry(payload, participantId, entry);
-    if (!updated) {
-      json(response, 404, { error: "participant_not_found" });
+      sendJson(response, 200, { ok: true, mode: "entry" });
       return;
     }
 
     await writeState(config, payload);
-    json(response, 200, { ok: true }, {
+    sendJson(response, 200, { ok: true }, {
       ETag: createPayloadEtag(stripPayloadAvatars(payload)),
     });
   } catch (error) {
     console.error(error);
-    json(response, 502, { error: "weight_entry_sync_failed" });
+    sendJson(response, 502, { error: "weight_entry_sync_failed" });
   }
 }

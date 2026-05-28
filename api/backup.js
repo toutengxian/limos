@@ -1,30 +1,25 @@
 import {
+  getDefaultPayload,
+  mergeWeightEntriesIntoPayload,
+} from "./payload-utils.js";
+import {
   fetchState,
   fetchWeightEntryRows,
-  getDefaultPayload,
   getEnvConfig,
   hasSupabaseConfig,
-  mergeWeightEntriesIntoPayload,
   writeBackupSnapshot,
-} from "./state-store.js";
-
-function json(response, statusCode, body) {
-  response.statusCode = statusCode;
-  response.setHeader("Content-Type", "application/json; charset=utf-8");
-  response.setHeader("Cache-Control", "no-store");
-  response.end(JSON.stringify(body));
-}
+} from "./supabase-store.js";
+import { sendJson, sendMethodNotAllowed } from "./http-utils.js";
 
 export default async function handler(request, response) {
   if (request.method !== "GET" && request.method !== "POST") {
-    response.setHeader("Allow", "GET, POST");
-    json(response, 405, { error: "method_not_allowed" });
+    sendMethodNotAllowed(response, ["GET", "POST"]);
     return;
   }
 
   const config = getEnvConfig();
   if (!hasSupabaseConfig(config)) {
-    json(response, 500, { error: "missing_supabase_config" });
+    sendJson(response, 500, { error: "missing_supabase_config" });
     return;
   }
 
@@ -32,7 +27,7 @@ export default async function handler(request, response) {
   const requestUrl = new URL(request.url || "/", "http://localhost");
   const token = request.headers["x-limos-backup-token"] || requestUrl.searchParams.get("token") || "";
   if (expectedToken && token !== expectedToken) {
-    json(response, 401, { error: "invalid_backup_token" });
+    sendJson(response, 401, { error: "invalid_backup_token" });
     return;
   }
 
@@ -45,7 +40,7 @@ export default async function handler(request, response) {
       payload: mergedPayload,
       weightEntries,
     });
-    json(response, 200, {
+    sendJson(response, 200, {
       ok: true,
       stateId: config.stateId,
       participantCount: Array.isArray(mergedPayload.participants) ? mergedPayload.participants.length : 0,
@@ -54,6 +49,6 @@ export default async function handler(request, response) {
     });
   } catch (error) {
     console.error(error);
-    json(response, 502, { error: "backup_failed" });
+    sendJson(response, 502, { error: "backup_failed" });
   }
 }

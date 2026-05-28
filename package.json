@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/check-environment.mjs && node scripts/write-config.mjs",
-    "check": "node --check app.js && node --check api/state.js && node --check api/state-store.js && node --check api/member.js && node --check api/weight-entry.js && node --check api/diagnostics.js && node --check api/backup.js && node --check server/node-server.mjs && node --check scripts/write-config.mjs && node --check scripts/check-environment.mjs && node --check scripts/start-node.mjs && node --check scripts/deploy-production.mjs && npm test",
+    "check": "node --check app.js && node --check api/http-utils.js && node --check api/request-utils.js && node --check api/payload-utils.js && node --check api/supabase-store.js && node --check api/state-store.js && node --check api/state.js && node --check api/date-utils.js && node --check api/member-domain.js && node --check api/member.js && node --check api/weight-entry.js && node --check api/diagnostics.js && node --check api/backup.js && node --check server/node-server.mjs && node --check scripts/write-config.mjs && node --check scripts/check-environment.mjs && node --check scripts/start-node.mjs && node --check scripts/deploy-production.mjs && npm test",
     "test": "node --test tests/*.test.mjs",
     "dev": "LIMOS_ENV_FILE=.env.local node scripts/start-node.mjs",
     "deploy:prod": "node scripts/deploy-production.mjs",

@@ -5,7 +5,7 @@ import {
   mergePayloadForWrite,
   mergeWeightEntriesIntoPayload,
   upsertPayloadWeightEntry,
-} from "../api/state-store.js";
+} from "../api/payload-utils.js";
 
 test("mergePayloadForWrite preserves existing avatars when incoming payload omits them", () => {
   const merged = mergePayloadForWrite(

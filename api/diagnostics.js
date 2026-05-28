@@ -3,14 +3,8 @@ import {
   fetchWeightEntryRows,
   getEnvConfig,
   hasSupabaseConfig,
-} from "./state-store.js";
-
-function json(response, statusCode, body) {
-  response.statusCode = statusCode;
-  response.setHeader("Content-Type", "application/json; charset=utf-8");
-  response.setHeader("Cache-Control", "no-store");
-  response.end(JSON.stringify(body));
-}
+} from "./supabase-store.js";
+import { sendJson, sendMethodNotAllowed } from "./http-utils.js";
 
 async function timeCheck(name, run) {
   const startedAt = Date.now();
@@ -34,8 +28,7 @@ async function timeCheck(name, run) {
 
 export default async function handler(request, response) {
   if (request.method !== "GET") {
-    response.setHeader("Allow", "GET");
-    json(response, 405, { error: "method_not_allowed" });
+    sendMethodNotAllowed(response, ["GET"]);
     return;
   }
 
@@ -45,7 +38,7 @@ export default async function handler(request, response) {
     || "local";
 
   if (!hasSupabaseConfig(config)) {
-    json(response, 500, {
+    sendJson(response, 500, {
       ok: false,
       version,
       stateId: config.stateId,
@@ -75,7 +68,7 @@ export default async function handler(request, response) {
   ];
 
   const ok = checks.every((check) => check.ok);
-  json(response, ok ? 200 : 502, {
+  sendJson(response, ok ? 200 : 502, {
     ok,
     version,
     stateId: config.stateId,
