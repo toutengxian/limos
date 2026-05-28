@@ -2255,12 +2255,14 @@ function renderTrendSummary(computed) {
   const memberText = viewScope === VIEW_SCOPE_COMPETITORS ? `参赛 ${results.length} 人` : `全部 ${results.length} 人`;
   const averageText = isNetGain ? `人均净增 ${formatNumber(Math.abs(averageDelta), 1)}kg` : `人均净减 ${formatNumber(Math.abs(averageDelta), 1)}kg`;
   const animalText = isNetGain ? "" : getWeightEquivalentText(Math.abs(totalDelta));
-  const noteParts = [memberText, averageText, animalText].filter(Boolean);
+  const summaryText = `${memberText} · ${averageText}`;
 
   elements.trendTotalScope.textContent = isNetGain ? `${scopeText}净增` : `${scopeText}净减`;
   elements.trendTotalLoss.textContent = `${formatNumber(Math.abs(totalDelta), 1)}kg`;
   elements.trendTotalLoss.classList.toggle("is-gain", isNetGain);
-  elements.trendTotalNote.textContent = results.length ? noteParts.join(" · ") : "当前范围暂无成员";
+  elements.trendTotalNote.innerHTML = results.length
+    ? `${escapeHtml(summaryText)}${animalText ? `<span>${escapeHtml(animalText)}</span>` : ""}`
+    : "当前范围暂无成员";
 }
 
 function getWeightEquivalentText(weightKg) {
@@ -2269,15 +2271,15 @@ function getWeightEquivalentText(weightKg) {
   const last = WEIGHT_EQUIVALENTS[WEIGHT_EQUIVALENTS.length - 1];
 
   if (weightKg < first.min) {
-    return `再减 ${formatNumber(first.averageKg - weightKg, 1)}kg ≈ 一只${first.name}`;
+    return `合计还差 ${formatNumber(first.averageKg - weightKg, 1)}kg 到一只${first.name}`;
   }
 
   const match = WEIGHT_EQUIVALENTS.find((item) => (
     weightKg >= item.min && (weightKg < item.max || item === last)
   ));
 
-  if (match) return `相当于一只${match.name}`;
-  return `已经超过一只${last.name}`;
+  if (match) return `合计约等于一只${match.name}`;
+  return `合计已超过一只${last.name}`;
 }
 
 function handleTrendPointer(event) {

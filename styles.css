@@ -1389,6 +1389,13 @@ select.input:hover {
   word-break: keep-all;
 }
 
+.trend-summary-card small span {
+  display: block;
+  margin-top: 3px;
+  color: var(--brand);
+  font-weight: 700;
+}
+
 .chart-panel {
   position: relative;
   display: grid;
