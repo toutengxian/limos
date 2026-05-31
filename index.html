@@ -362,6 +362,49 @@
         </section>
       </div>
 
+      <div id="milestone-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="milestone-title">
+        <section class="modal-panel milestone-modal">
+          <div class="milestone-glow" aria-hidden="true"></div>
+          <div class="modal-heading milestone-heading">
+            <div>
+              <p id="milestone-eyebrow" class="milestone-eyebrow">月度里程碑</p>
+              <h2 id="milestone-title">新的月份</h2>
+            </div>
+            <button id="milestone-close" class="modal-close-button" type="button" aria-label="关闭月度里程碑">×</button>
+          </div>
+          <div class="milestone-hero">
+            <span id="milestone-main-label">上月小结</span>
+            <strong id="milestone-main-value">--</strong>
+          </div>
+          <div class="milestone-stats">
+            <div>
+              <strong id="milestone-rate">--</strong>
+              <span>当前瘦身率</span>
+            </div>
+            <div>
+              <strong id="milestone-checkins">--</strong>
+              <span>上月上秤</span>
+            </div>
+            <div>
+              <strong id="milestone-team">--</strong>
+              <span>小队上月</span>
+            </div>
+          </div>
+          <div class="milestone-season">
+            <div>
+              <span id="milestone-days">剩余 -- 天</span>
+              <small id="milestone-progress-label">9 月 30 日收官</small>
+            </div>
+            <div class="milestone-progress-track" aria-hidden="true">
+              <span id="milestone-progress-fill"></span>
+            </div>
+          </div>
+          <div id="milestone-track" class="milestone-track" aria-label="月度里程碑"></div>
+          <p id="milestone-message" class="milestone-message">稳稳来。</p>
+          <button id="milestone-cta" class="secondary-button milestone-cta" type="button">继续上秤</button>
+        </section>
+      </div>
+
       <div id="toast" class="toast" role="status" aria-live="polite"></div>
     </main>
 

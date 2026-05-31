@@ -10,6 +10,7 @@ const SESSION_KEY = "limos_session_v1";
 const LEGACY_SESSION_KEY = "limos_current_user_id_v1";
 const API_CACHE_KEY = "limos_api_cache_v1";
 const MUTATION_QUEUE_KEY = "limos_mutation_queue_v1";
+const MILESTONE_SEEN_KEY = "limos_milestone_seen_v1";
 const REMOTE_SYNC_INTERVAL_MS = 15000;
 const AVATAR_SIZE_PX = 192;
 const AVATAR_QUALITY = 0.78;
@@ -21,6 +22,13 @@ const USER_ROLE_COMPETITOR = "competitor";
 const USER_ROLE_SUPPORTER = "supporter";
 const VIEW_SCOPE_ALL = "all";
 const VIEW_SCOPE_COMPETITORS = "competitors";
+const MILESTONE_START_DATE = "2026-06-01";
+const MILESTONE_MONTHS = [
+  { key: "2026-06", label: "6月", title: "把节奏跑起来", copy: "先稳住上秤频率，别急着用力过猛。" },
+  { key: "2026-07", label: "7月", title: "让习惯长出来", copy: "这个月看连续性，轻一点也算赢。" },
+  { key: "2026-08", label: "8月", title: "守住中后段", copy: "少一点波动，多一点稳定。" },
+  { key: "2026-09", label: "9月", title: "漂亮收官", copy: "最后一段，稳住就很有分量。" },
+];
 const BMI_SCALE_MIN = 16;
 const BMI_SCALE_MAX = 32;
 const BMI_CATEGORIES = [
@@ -114,6 +122,7 @@ let trendChartMeta = null;
 let trendAutoScrollToLatest = true;
 let trendScrollFrame = 0;
 let trendFocusParticipantId = "";
+let openMilestoneMonthKey = "";
 const avatarThemeColorCache = new Map();
 const avatarHydrationInFlight = new Set();
 const pendingAvatarUploadIds = new Set();
@@ -186,6 +195,21 @@ const elements = {
   ledgerHelpButton: $("#ledger-help-button"),
   ledgerHelpModal: $("#ledger-help-modal"),
   ledgerHelpClose: $("#ledger-help-close"),
+  milestoneModal: $("#milestone-modal"),
+  milestoneClose: $("#milestone-close"),
+  milestoneCta: $("#milestone-cta"),
+  milestoneEyebrow: $("#milestone-eyebrow"),
+  milestoneTitle: $("#milestone-title"),
+  milestoneMainLabel: $("#milestone-main-label"),
+  milestoneMainValue: $("#milestone-main-value"),
+  milestoneRate: $("#milestone-rate"),
+  milestoneCheckins: $("#milestone-checkins"),
+  milestoneTeam: $("#milestone-team"),
+  milestoneDays: $("#milestone-days"),
+  milestoneProgressLabel: $("#milestone-progress-label"),
+  milestoneProgressFill: $("#milestone-progress-fill"),
+  milestoneTrack: $("#milestone-track"),
+  milestoneMessage: $("#milestone-message"),
   rankList: $("#rank-list"),
   profileAvatar: $("#profile-avatar"),
   profileName: $("#profile-name"),
@@ -256,6 +280,17 @@ function bindEvents() {
   elements.ledgerHelpModal.addEventListener("click", (event) => {
     if (event.target === elements.ledgerHelpModal) closeLedgerHelp();
   });
+  elements.milestoneClose.addEventListener("click", closeMilestoneModal);
+  elements.milestoneCta.addEventListener("click", () => {
+    closeMilestoneModal();
+    navigate("dashboard");
+    if (!elements.weightInputRow.classList.contains("hidden")) {
+      elements.weightInput.focus();
+    }
+  });
+  elements.milestoneModal.addEventListener("click", (event) => {
+    if (event.target === elements.milestoneModal) closeMilestoneModal();
+  });
   elements.trendCanvas.addEventListener("pointermove", handleTrendPointer);
   elements.trendCanvas.addEventListener("pointerdown", handleTrendPointer);
   elements.trendCanvas.addEventListener("pointerleave", clearTrendPointer);
@@ -293,7 +328,12 @@ function bindEvents() {
     event.returnValue = "";
   });
   window.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && !elements.ledgerHelpModal.classList.contains("hidden")) {
+    if (event.key !== "Escape") return;
+    if (!elements.milestoneModal.classList.contains("hidden")) {
+      closeMilestoneModal();
+      return;
+    }
+    if (!elements.ledgerHelpModal.classList.contains("hidden")) {
       closeLedgerHelp();
     }
   });
@@ -307,6 +347,17 @@ function openLedgerHelp() {
 function closeLedgerHelp() {
   elements.ledgerHelpModal.classList.add("hidden");
   elements.ledgerHelpButton.focus();
+}
+
+function openMilestoneModal(monthKey) {
+  openMilestoneMonthKey = monthKey;
+  elements.milestoneModal.classList.remove("hidden");
+  elements.milestoneClose.focus();
+}
+
+function closeMilestoneModal() {
+  openMilestoneMonthKey = "";
+  elements.milestoneModal.classList.add("hidden");
 }
 
 function setSyncStatus(kind, message) {
@@ -1455,6 +1506,7 @@ function renderAll() {
   renderTrend(computed);
   renderRankPage(computed);
   renderProfile(computed);
+  maybeOpenMonthlyMilestone(computed);
 }
 
 function renderTopbar(computed) {
@@ -1613,16 +1665,158 @@ function updateSeasonProgress(isActive) {
     return;
   }
 
+  const season = getSeasonProgress();
+  elements.daysLeft.textContent = `剩余 ${season.remainingDays} 天`;
+  elements.seasonProgressLabel.textContent = `已走 ${Math.round(season.progress)}% · 9 月 30 日收官`;
+  elements.seasonProgressFill.style.width = `${season.progress}%`;
+}
+
+function getSeasonProgress(today = getTodayISO()) {
   const startDate = getCompetitionStartDate();
-  const today = getTodayISO();
   const totalDays = Math.max(1, daysBetween(startDate, ACTIVITY.endDate));
   const remainingDays = daysBetween(today, ACTIVITY.endDate);
   const elapsedDays = clamp(daysBetween(startDate, today), 0, totalDays);
   const progress = clamp((elapsedDays / totalDays) * 100, 0, 100);
+  return {
+    progress,
+    remainingDays,
+    elapsedDays,
+    totalDays,
+  };
+}
 
-  elements.daysLeft.textContent = `剩余 ${remainingDays} 天`;
-  elements.seasonProgressLabel.textContent = `已走 ${Math.round(progress)}% · 9 月 30 日收官`;
-  elements.seasonProgressFill.style.width = `${progress}%`;
+function maybeOpenMonthlyMilestone(computed) {
+  if (!elements.milestoneModal || isAdminSession() || !isCompetitionActive()) return;
+  const current = getCurrentUser();
+  if (!current) return;
+
+  const today = getMilestoneTodayISO();
+  if (today < MILESTONE_START_DATE || today > ACTIVITY.endDate) return;
+
+  const monthKey = today.slice(0, 7);
+  const plan = MILESTONE_MONTHS.find((item) => item.key === monthKey);
+  if (!plan) return;
+
+  if (openMilestoneMonthKey === monthKey && !elements.milestoneModal.classList.contains("hidden")) {
+    renderMilestoneModal(computed, current, today, plan);
+    return;
+  }
+
+  if (hasSeenMilestone(current.id, monthKey)) return;
+
+  renderMilestoneModal(computed, current, today, plan);
+  markMilestoneSeen(current.id, monthKey);
+  openMilestoneModal(monthKey);
+}
+
+function renderMilestoneModal(computed, current, today, plan) {
+  const previousMonth = getPreviousMonthRange(today);
+  const personalDelta = getParticipantDeltaInRange(current, previousMonth);
+  const currentResult = computed.allResults.find((item) => item.id === current.id);
+  const teamDelta = round1(state.participants.reduce((sum, participant) => (
+    sum + getParticipantDeltaInRange(participant, previousMonth).deltaKg
+  ), 0));
+  const season = getSeasonProgress(today);
+  const checkins = getEntriesInRange(current, previousMonth.start, previousMonth.end).length;
+
+  elements.milestoneEyebrow.textContent = `${plan.label}里程碑 · ${plan.title}`;
+  elements.milestoneTitle.textContent = `${previousMonth.label}小结`;
+  elements.milestoneMainLabel.textContent = isSupporter(current) ? "上月陪伴记录" : "上月进展";
+  elements.milestoneMainValue.textContent = formatDeltaSummary(personalDelta.deltaKg);
+  elements.milestoneRate.textContent = currentResult ? formatRate(currentResult.lossRate) : "--";
+  elements.milestoneCheckins.textContent = `${checkins} 次`;
+  elements.milestoneTeam.textContent = formatDeltaSummary(teamDelta);
+  elements.milestoneDays.textContent = `剩余 ${season.remainingDays} 天`;
+  elements.milestoneProgressLabel.textContent = `已走 ${Math.round(season.progress)}% · 9 月 30 日收官`;
+  elements.milestoneProgressFill.style.width = `${season.progress}%`;
+  elements.milestoneTrack.innerHTML = MILESTONE_MONTHS.map((item) => milestoneStepHtml(item, plan.key)).join("");
+  elements.milestoneMessage.textContent = getMilestoneMessage(personalDelta.deltaKg, checkins, plan);
+}
+
+function milestoneStepHtml(item, activeKey) {
+  const classes = [
+    "milestone-step",
+    item.key < activeKey ? "is-done" : "",
+    item.key === activeKey ? "is-active" : "",
+  ].filter(Boolean).join(" ");
+  return `
+    <div class="${classes}">
+      <span></span>
+      <strong>${escapeHtml(item.label)}</strong>
+      <small>${escapeHtml(item.title)}</small>
+    </div>
+  `;
+}
+
+function getMilestoneMessage(deltaKg, checkins, plan) {
+  if (deltaKg >= 2) return `${plan.copy} 上个月已经很扎实，这个月延续就好。`;
+  if (deltaKg > 0) return `${plan.copy} 已经在往好的方向走了，慢慢加一点就够。`;
+  if (checkins >= 4) return `${plan.copy} 上个月有记录就有线索，这个月把节奏接上。`;
+  return `${plan.copy} 新月份先从一次上秤开始，轻轻把节奏找回来。`;
+}
+
+function getPreviousMonthRange(todayIso) {
+  const currentMonthStart = `${todayIso.slice(0, 7)}-01`;
+  const end = addDaysISO(currentMonthStart, -1);
+  return {
+    start: `${end.slice(0, 7)}-01`,
+    end,
+    label: `${Number(end.slice(5, 7))} 月`,
+  };
+}
+
+function getParticipantDeltaInRange(participant, range) {
+  const startWeight = getWeightAtDate(participant, range.start);
+  const endWeight = getWeightAtDate(participant, range.end);
+  return {
+    startWeight,
+    endWeight,
+    deltaKg: round1(startWeight - endWeight),
+  };
+}
+
+function getEntriesInRange(participant, startDate, endDate) {
+  return Array.isArray(participant?.entries)
+    ? participant.entries.filter((entry) => entry.date >= startDate && entry.date <= endDate)
+    : [];
+}
+
+function formatDeltaSummary(deltaKg) {
+  if (deltaKg > 0) return `净减 ${formatNumber(Math.abs(deltaKg), 1)}kg`;
+  if (deltaKg < 0) return `净增 ${formatNumber(Math.abs(deltaKg), 1)}kg`;
+  return "基本持平";
+}
+
+function getMilestoneTodayISO() {
+  const override = APP_CONFIG.environment !== "production"
+    ? new URLSearchParams(window.location.search).get("milestoneDate")
+    : "";
+  return isValidISODate(override) ? override : getCurrentShanghaiDateISO();
+}
+
+function hasSeenMilestone(participantId, monthKey) {
+  const seen = loadMilestoneSeen();
+  return Boolean(seen[getMilestoneSeenId(participantId, monthKey)]);
+}
+
+function markMilestoneSeen(participantId, monthKey) {
+  const seen = loadMilestoneSeen();
+  seen[getMilestoneSeenId(participantId, monthKey)] = new Date().toISOString();
+  localStorage.setItem(MILESTONE_SEEN_KEY, JSON.stringify(seen));
+}
+
+function loadMilestoneSeen() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(MILESTONE_SEEN_KEY));
+    return saved && typeof saved === "object" && !Array.isArray(saved) ? saved : {};
+  } catch {
+    localStorage.removeItem(MILESTONE_SEEN_KEY);
+    return {};
+  }
+}
+
+function getMilestoneSeenId(participantId, monthKey) {
+  return `${participantId}:${monthKey}`;
 }
 
 function scrollTrendToLatest() {
@@ -3011,15 +3205,29 @@ async function hashText(value) {
 }
 
 function getTodayISO() {
+  const today = getCurrentShanghaiDateISO();
+  if (today > ACTIVITY.endDate) return ACTIVITY.endDate;
+  return today;
+}
+
+function getCurrentShanghaiDateISO() {
   const formatter = new Intl.DateTimeFormat("sv-SE", {
     timeZone: "Asia/Shanghai",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
   });
-  const today = formatter.format(new Date());
-  if (today > ACTIVITY.endDate) return ACTIVITY.endDate;
-  return today;
+  return formatter.format(new Date());
+}
+
+function isValidISODate(value) {
+  const normalized = String(value || "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return false;
+  const [year, month, day] = normalized.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year
+    && date.getUTCMonth() === month - 1
+    && date.getUTCDate() === day;
 }
 
 function addDaysISO(iso, offset) {
