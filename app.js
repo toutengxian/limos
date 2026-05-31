@@ -24,6 +24,7 @@ const VIEW_SCOPE_ALL = "all";
 const VIEW_SCOPE_COMPETITORS = "competitors";
 const MILESTONE_START_DATE = "2026-06-01";
 const MILESTONE_MONTHS = [
+  { key: "2026-05", label: "5月", title: "开局上秤", copy: "开局月已经留下第一组坐标。" },
   { key: "2026-06", label: "6月", title: "把节奏跑起来", copy: "先稳住上秤频率，别急着用力过猛。" },
   { key: "2026-07", label: "7月", title: "让习惯长出来", copy: "这个月看连续性，轻一点也算赢。" },
   { key: "2026-08", label: "8月", title: "守住中后段", copy: "少一点波动，多一点稳定。" },
@@ -1696,16 +1697,17 @@ function maybeOpenMonthlyMilestone(computed) {
   const monthKey = today.slice(0, 7);
   const plan = MILESTONE_MONTHS.find((item) => item.key === monthKey);
   if (!plan) return;
+  const preview = isMilestonePreviewMode();
 
   if (openMilestoneMonthKey === monthKey && !elements.milestoneModal.classList.contains("hidden")) {
     renderMilestoneModal(computed, current, today, plan);
     return;
   }
 
-  if (hasSeenMilestone(current.id, monthKey)) return;
+  if (!preview && hasSeenMilestone(current.id, monthKey)) return;
 
   renderMilestoneModal(computed, current, today, plan);
-  markMilestoneSeen(current.id, monthKey);
+  if (!preview) markMilestoneSeen(current.id, monthKey);
   openMilestoneModal(monthKey);
 }
 
@@ -1792,6 +1794,11 @@ function getMilestoneTodayISO() {
     ? new URLSearchParams(window.location.search).get("milestoneDate")
     : "";
   return isValidISODate(override) ? override : getCurrentShanghaiDateISO();
+}
+
+function isMilestonePreviewMode() {
+  return APP_CONFIG.environment !== "production"
+    && new URLSearchParams(window.location.search).get("milestonePreview") === "1";
 }
 
 function hasSeenMilestone(participantId, monthKey) {
