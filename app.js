@@ -124,6 +124,7 @@ let trendAutoScrollToLatest = true;
 let trendScrollFrame = 0;
 let trendFocusParticipantId = "";
 let openMilestoneMonthKey = "";
+let lastMilestoneShareData = null;
 const avatarThemeColorCache = new Map();
 const avatarHydrationInFlight = new Set();
 const pendingAvatarUploadIds = new Set();
@@ -198,6 +199,7 @@ const elements = {
   ledgerHelpClose: $("#ledger-help-close"),
   milestoneModal: $("#milestone-modal"),
   milestoneClose: $("#milestone-close"),
+  milestoneShare: $("#milestone-share"),
   milestoneCta: $("#milestone-cta"),
   milestoneEyebrow: $("#milestone-eyebrow"),
   milestoneTitle: $("#milestone-title"),
@@ -282,6 +284,7 @@ function bindEvents() {
     if (event.target === elements.ledgerHelpModal) closeLedgerHelp();
   });
   elements.milestoneClose.addEventListener("click", closeMilestoneModal);
+  elements.milestoneShare.addEventListener("click", shareMilestoneCard);
   elements.milestoneCta.addEventListener("click", () => {
     closeMilestoneModal();
     navigate("dashboard");
@@ -1720,19 +1723,40 @@ function renderMilestoneModal(computed, current, today, plan) {
   ), 0));
   const season = getSeasonProgress(today);
   const checkins = getEntriesInRange(current, previousMonth.start, previousMonth.end).length;
+  const mainValue = formatDeltaSummary(personalDelta.deltaKg);
+  const rateValue = currentResult ? formatRate(currentResult.lossRate) : "--";
+  const checkinValue = `${checkins} 次`;
+  const teamValue = formatDeltaSummary(teamDelta);
+  const progressLabel = `已走 ${Math.round(season.progress)}% · 9 月 30 日收官`;
+  const message = getMilestoneMessage(personalDelta.deltaKg, checkins, plan);
 
   elements.milestoneEyebrow.textContent = `${plan.label}里程碑 · ${plan.title}`;
   elements.milestoneTitle.textContent = `${previousMonth.label}小结`;
   elements.milestoneMainLabel.textContent = isSupporter(current) ? "上月陪伴记录" : "上月进展";
-  elements.milestoneMainValue.textContent = formatDeltaSummary(personalDelta.deltaKg);
-  elements.milestoneRate.textContent = currentResult ? formatRate(currentResult.lossRate) : "--";
-  elements.milestoneCheckins.textContent = `${checkins} 次`;
-  elements.milestoneTeam.textContent = formatDeltaSummary(teamDelta);
+  elements.milestoneMainValue.textContent = mainValue;
+  elements.milestoneRate.textContent = rateValue;
+  elements.milestoneCheckins.textContent = checkinValue;
+  elements.milestoneTeam.textContent = teamValue;
   elements.milestoneDays.textContent = `剩余 ${season.remainingDays} 天`;
-  elements.milestoneProgressLabel.textContent = `已走 ${Math.round(season.progress)}% · 9 月 30 日收官`;
+  elements.milestoneProgressLabel.textContent = progressLabel;
   elements.milestoneProgressFill.style.width = `${season.progress}%`;
   elements.milestoneTrack.innerHTML = MILESTONE_MONTHS.map((item) => milestoneStepHtml(item, plan.key)).join("");
-  elements.milestoneMessage.textContent = getMilestoneMessage(personalDelta.deltaKg, checkins, plan);
+  elements.milestoneMessage.textContent = message;
+  lastMilestoneShareData = {
+    monthKey: plan.key,
+    planKey: plan.key,
+    eyebrow: elements.milestoneEyebrow.textContent,
+    title: elements.milestoneTitle.textContent,
+    mainLabel: elements.milestoneMainLabel.textContent,
+    mainValue,
+    rateValue,
+    checkinValue,
+    teamValue,
+    daysValue: elements.milestoneDays.textContent,
+    progressLabel,
+    progress: season.progress,
+    message,
+  };
 }
 
 function milestoneStepHtml(item, activeKey) {
@@ -1824,6 +1848,233 @@ function loadMilestoneSeen() {
 
 function getMilestoneSeenId(participantId, monthKey) {
   return `${participantId}:${monthKey}`;
+}
+
+async function shareMilestoneCard() {
+  if (!lastMilestoneShareData) {
+    showToast("还没有可分享的里程碑");
+    return;
+  }
+
+  const originalLabel = elements.milestoneShare.textContent;
+  elements.milestoneShare.disabled = true;
+  elements.milestoneShare.textContent = "生成中";
+
+  try {
+    const blob = await createMilestoneShareBlob(lastMilestoneShareData);
+    const fileName = `limos-${lastMilestoneShareData.monthKey}-milestone.png`;
+    const file = typeof File === "function" ? new File([blob], fileName, { type: "image/png" }) : null;
+
+    if (file && canShareFile(file)) {
+      try {
+        await navigator.share({
+          title: "Limos 小瘦包",
+          text: "我的月度里程碑",
+          files: [file],
+        });
+        return;
+      } catch (error) {
+        if (error?.name === "AbortError") return;
+      }
+    }
+
+    downloadBlob(blob, fileName);
+    showToast("图片已保存，可发到微信群");
+  } catch (error) {
+    console.error(error);
+    showToast("生成图片失败，稍后再试");
+  } finally {
+    elements.milestoneShare.disabled = false;
+    elements.milestoneShare.textContent = originalLabel;
+  }
+}
+
+function canShareFile(file) {
+  if (!navigator.share) return false;
+  if (!navigator.canShare) return true;
+  try {
+    return navigator.canShare({ files: [file] });
+  } catch {
+    return false;
+  }
+}
+
+function createMilestoneShareBlob(data) {
+  const canvas = document.createElement("canvas");
+  const width = 1080;
+  const height = 1420;
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+
+  const bg = ctx.createLinearGradient(0, 0, width, height);
+  bg.addColorStop(0, "#f5faf4");
+  bg.addColorStop(0.48, "#eef6ee");
+  bg.addColorStop(1, "#e5f0e9");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, width, height);
+
+  fillRoundRect(ctx, 66, 62, 948, 1296, 58, "rgba(255,255,255,0.78)");
+  strokeRoundRect(ctx, 66, 62, 948, 1296, 58, "rgba(255,255,255,0.92)", 3);
+
+  const sheen = ctx.createLinearGradient(74, 74, 1014, 300);
+  sheen.addColorStop(0, "rgba(216,255,79,0.28)");
+  sheen.addColorStop(0.45, "rgba(255,255,255,0.2)");
+  sheen.addColorStop(1, "rgba(31,122,92,0.08)");
+  fillRoundRect(ctx, 86, 82, 908, 248, 46, sheen);
+
+  setCanvasFont(ctx, 760, 32);
+  ctx.fillStyle = "#1f7a5c";
+  ctx.fillText("Limos 小瘦包", 118, 142);
+  setCanvasFont(ctx, 620, 25);
+  ctx.fillStyle = "#738079";
+  ctx.fillText(data.eyebrow, 118, 186);
+
+  setCanvasFont(ctx, 820, 58);
+  ctx.fillStyle = "#101418";
+  ctx.fillText(data.title, 118, 276);
+
+  const heroGradient = ctx.createLinearGradient(118, 368, 962, 586);
+  heroGradient.addColorStop(0, "rgba(255,255,255,0.82)");
+  heroGradient.addColorStop(1, "rgba(216,255,79,0.18)");
+  fillRoundRect(ctx, 118, 360, 844, 226, 44, heroGradient);
+  strokeRoundRect(ctx, 118, 360, 844, 226, 44, "rgba(255,255,255,0.95)", 2);
+  setCanvasFont(ctx, 660, 30);
+  ctx.fillStyle = "#738079";
+  ctx.fillText(data.mainLabel, 164, 430);
+  setCanvasFont(ctx, 780, 88);
+  ctx.fillStyle = "#1f7a5c";
+  ctx.fillText(data.mainValue, 164, 538);
+
+  drawShareStat(ctx, 118, 626, 260, "当前瘦身率", data.rateValue);
+  drawShareStat(ctx, 410, 626, 260, "上月上秤", data.checkinValue);
+  drawShareStat(ctx, 702, 626, 260, "小队上月", data.teamValue);
+
+  setCanvasFont(ctx, 760, 32);
+  ctx.fillStyle = "#1f7a5c";
+  ctx.fillText(data.daysValue, 118, 824);
+  setCanvasFont(ctx, 580, 25);
+  ctx.fillStyle = "#738079";
+  ctx.fillText(data.progressLabel, 118, 866);
+  fillRoundRect(ctx, 118, 906, 844, 22, 999, "rgba(16,20,24,0.09)");
+  const progressWidth = Math.max(12, 844 * clamp(data.progress, 0, 100) / 100);
+  const progressGradient = ctx.createLinearGradient(118, 906, 962, 906);
+  progressGradient.addColorStop(0, "#d8ff4f");
+  progressGradient.addColorStop(1, "#1f7a5c");
+  fillRoundRect(ctx, 118, 906, progressWidth, 22, 999, progressGradient);
+
+  drawShareMilestoneTrack(ctx, data.planKey, 118, 990, 844);
+
+  fillRoundRect(ctx, 118, 1168, 844, 106, 34, "rgba(255,255,255,0.58)");
+  setCanvasFont(ctx, 620, 30);
+  ctx.fillStyle = "#313a35";
+  drawWrappedCanvasText(ctx, data.message, 160, 1228, 760, 42, 2);
+
+  setCanvasFont(ctx, 620, 24);
+  ctx.fillStyle = "#8a958f";
+  ctx.textAlign = "center";
+  ctx.fillText("limos.top · 9 月 30 日收官", width / 2, 1320);
+  ctx.textAlign = "left";
+
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error("Milestone canvas export failed"));
+    }, "image/png");
+  });
+}
+
+function drawShareStat(ctx, x, y, width, label, value) {
+  fillRoundRect(ctx, x, y, width, 128, 30, "rgba(255,255,255,0.52)");
+  setCanvasFont(ctx, 760, 34);
+  ctx.fillStyle = "#101418";
+  ctx.fillText(value, x + 28, y + 55);
+  setCanvasFont(ctx, 560, 24);
+  ctx.fillStyle = "#738079";
+  ctx.fillText(label, x + 28, y + 94);
+}
+
+function drawShareMilestoneTrack(ctx, activeKey, x, y, width) {
+  const gap = 18;
+  const stepWidth = (width - gap * (MILESTONE_MONTHS.length - 1)) / MILESTONE_MONTHS.length;
+  MILESTONE_MONTHS.forEach((item, index) => {
+    const stepX = x + index * (stepWidth + gap);
+    const color = item.key === activeKey
+      ? "#d8ff4f"
+      : item.key < activeKey
+        ? "rgba(31,122,92,0.42)"
+        : "rgba(16,20,24,0.1)";
+    fillRoundRect(ctx, stepX, y, stepWidth, 14, 999, color);
+    setCanvasFont(ctx, 760, 25);
+    ctx.fillStyle = item.key === activeKey ? "#101418" : "#313a35";
+    ctx.fillText(item.label, stepX, y + 52);
+    setCanvasFont(ctx, 560, 20);
+    ctx.fillStyle = "#8a958f";
+    ctx.fillText(item.title.slice(0, 5), stepX, y + 84);
+  });
+}
+
+function drawWrappedCanvasText(ctx, text, x, y, maxWidth, lineHeight, maxLines) {
+  let line = "";
+  let lineCount = 0;
+  Array.from(text).forEach((char) => {
+    if (lineCount >= maxLines) return;
+    const next = line + char;
+    if (ctx.measureText(next).width > maxWidth && line) {
+      ctx.fillText(line, x, y + lineCount * lineHeight);
+      line = char;
+      lineCount += 1;
+      return;
+    }
+    line = next;
+  });
+  if (line && lineCount < maxLines) {
+    ctx.fillText(line, x, y + lineCount * lineHeight);
+  }
+}
+
+function setCanvasFont(ctx, weight, size) {
+  ctx.font = `${weight} ${size}px -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif`;
+}
+
+function fillRoundRect(ctx, x, y, width, height, radius, fillStyle) {
+  ctx.beginPath();
+  roundRectPath(ctx, x, y, width, height, radius);
+  ctx.fillStyle = fillStyle;
+  ctx.fill();
+}
+
+function strokeRoundRect(ctx, x, y, width, height, radius, strokeStyle, lineWidth) {
+  ctx.beginPath();
+  roundRectPath(ctx, x, y, width, height, radius);
+  ctx.strokeStyle = strokeStyle;
+  ctx.lineWidth = lineWidth;
+  ctx.stroke();
+}
+
+function roundRectPath(ctx, x, y, width, height, radius) {
+  const r = Math.min(radius, width / 2, height / 2);
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + width - r, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+  ctx.lineTo(x + width, y + height - r);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+  ctx.lineTo(x + r, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function downloadBlob(blob, fileName) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function scrollTrendToLatest() {
