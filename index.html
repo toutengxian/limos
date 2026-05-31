@@ -180,6 +180,7 @@
               <span id="dashboard-weight-delta">--</span>
               <span id="dashboard-gap">--</span>
             </div>
+            <div id="dashboard-insights" class="dashboard-insights hidden"></div>
           </div>
 
           <form id="weight-form" class="panel weight-panel">
@@ -194,12 +195,22 @@
               <input id="weight-input" class="weight-input" type="text" inputmode="decimal" autocomplete="off" placeholder="0.0" />
               <span>kg</span>
             </div>
+            <p id="weight-warning" class="weight-warning hidden">这个变化有点大，再点一次确认记录。</p>
             <div id="weight-checkin-card" class="weight-checkin-card hidden">
               <strong id="weight-checkin-value">--kg</strong>
               <span id="weight-checkin-meta">--</span>
             </div>
+            <div id="weight-feedback-card" class="weight-feedback-card hidden"></div>
             <button id="weight-submit-button" class="secondary-button" type="submit">更新体重</button>
           </form>
+
+          <section id="activity-feed-section" class="section-block compact-section hidden">
+            <div class="section-heading">
+              <h2>小队动态</h2>
+              <span class="muted">最近上秤</span>
+            </div>
+            <div id="activity-feed" class="activity-feed"></div>
+          </section>
 
           <section class="section-block">
             <div class="section-heading">
@@ -242,7 +253,10 @@
               <span id="trend-total-scope">小队累计净减</span>
               <strong id="trend-total-loss">--kg</strong>
             </div>
-            <small id="trend-total-note">随筛选范围更新</small>
+            <div class="trend-summary-copy">
+              <small id="trend-total-note">随筛选范围更新</small>
+              <small id="trend-projection" class="trend-projection">--</small>
+            </div>
           </div>
           <div class="chart-panel">
             <canvas id="trend-axis-canvas" aria-hidden="true"></canvas>

@@ -14,6 +14,8 @@ const MILESTONE_SEEN_KEY = "limos_milestone_seen_v1";
 const REMOTE_SYNC_INTERVAL_MS = 15000;
 const AVATAR_SIZE_PX = 192;
 const AVATAR_QUALITY = 0.78;
+const UNUSUAL_WEIGHT_DELTA_KG = 3;
+const PREDICTION_LOOKBACK_DAYS = 7;
 const APP_CONFIG = window.LIMOS_CONFIG || {};
 const ADMIN_CODE_HASH = APP_CONFIG.adminCodeHash || "c2bbd6ff1f04663cf7622ac6a0597516daabd2c49f3e126869f1ee887f6aab85";
 const ROLE_MEMBER = "member";
@@ -118,6 +120,7 @@ let syncStatus = {
   message: "",
   updatedAt: "",
 };
+let pendingWeightConfirmation = null;
 let trendHoverIndex = null;
 let trendChartMeta = null;
 let trendAutoScrollToLatest = true;
@@ -165,6 +168,7 @@ const elements = {
   dashboardMoney: $("#dashboard-money"),
   dashboardWeightDelta: $("#dashboard-weight-delta"),
   dashboardGap: $("#dashboard-gap"),
+  dashboardInsights: $("#dashboard-insights"),
   daysLeft: $("#days-left"),
   seasonProgressLabel: $("#season-progress-label"),
   seasonProgressFill: $("#season-progress-fill"),
@@ -172,9 +176,11 @@ const elements = {
   weightCardTitle: $("#weight-card-title"),
   weightInput: $("#weight-input"),
   weightInputRow: $("#weight-input-row"),
+  weightWarning: $("#weight-warning"),
   weightCheckinCard: $("#weight-checkin-card"),
   weightCheckinValue: $("#weight-checkin-value"),
   weightCheckinMeta: $("#weight-checkin-meta"),
+  weightFeedbackCard: $("#weight-feedback-card"),
   weightSubmitButton: $("#weight-submit-button"),
   weightEditButton: $("#weight-edit-button"),
   lastEntryText: $("#last-entry-text"),
@@ -183,9 +189,12 @@ const elements = {
   inviteLink: $("#invite-link"),
   copyInviteButton: $("#copy-invite-button"),
   dashboardLeaderboard: $("#dashboard-leaderboard"),
+  activityFeedSection: $("#activity-feed-section"),
+  activityFeed: $("#activity-feed"),
   trendTotalScope: $("#trend-total-scope"),
   trendTotalLoss: $("#trend-total-loss"),
   trendTotalNote: $("#trend-total-note"),
+  trendProjection: $("#trend-projection"),
   trendScroll: $("#trend-scroll"),
   trendAxisCanvas: $("#trend-axis-canvas"),
   trendCanvas: $("#trend-canvas"),
@@ -269,8 +278,14 @@ function bindEvents() {
   elements.weightForm.addEventListener("submit", submitWeight);
   elements.weightEditButton.addEventListener("click", () => {
     editingTodayWeight = true;
+    pendingWeightConfirmation = null;
     renderDashboard(getComputed());
     elements.weightInput.focus();
+  });
+  elements.weightInput.addEventListener("input", () => {
+    pendingWeightConfirmation = null;
+    elements.weightWarning.classList.add("hidden");
+    elements.weightSubmitButton.textContent = "更新体重";
   });
   elements.profileForm.addEventListener("submit", submitProfile);
   elements.leaveTeamButton.addEventListener("click", leaveTeam);
@@ -1316,6 +1331,24 @@ async function submitWeight(event) {
     return;
   }
 
+  const today = getTodayISO();
+  const unusualDelta = getUnusualWeightDelta(participant, today, weight);
+  if (unusualDelta && !matchesPendingWeightConfirmation(participant.id, today, weight)) {
+    pendingWeightConfirmation = {
+      participantId: participant.id,
+      date: today,
+      weight: round1(weight),
+    };
+    elements.weightWarning.textContent = `比上次${unusualDelta > 0 ? "重" : "轻"} ${formatNumber(Math.abs(unusualDelta), 1)}kg，再点一次确认记录。`;
+    elements.weightWarning.classList.remove("hidden");
+    elements.weightSubmitButton.textContent = "确认记录";
+    return;
+  }
+
+  pendingWeightConfirmation = null;
+  elements.weightWarning.classList.add("hidden");
+  elements.weightSubmitButton.textContent = "更新体重";
+
   const entry = upsertEntry(participant, getTodayISO(), round1(weight));
   editingTodayWeight = false;
   saveLocalState(state);
@@ -1560,8 +1593,10 @@ function renderDashboard(computed) {
       ? `${formatSignedKg(result.deltaKg)} · ${getBodyStatsText(current, result.currentWeight)}`
       : `初始 ${formatNumber(current.initialWeight, 1)}kg · ${getBodyStatsText(current, current.initialWeight)}`;
     elements.dashboardGap.textContent = "5 位参赛成员坐满自动开局";
+    renderDashboardInsights(current, computed);
     elements.weightForm.classList.toggle("hidden", isCompetitor(current));
     renderWeightCard(current, "陪伴用户可以先记录体重");
+    renderActivityFeed(computed);
     elements.dashboardLeaderboard.innerHTML = waitingListHtml();
     return;
   }
@@ -1580,6 +1615,7 @@ function renderDashboard(computed) {
     : result.isLeader
     ? computed.leaders.length > 1 ? "并列领跑，等下一次破局" : "你在领跑"
     : `落后第一名 ${formatNumber(result.gapToLeader, 2)} 个百分点`;
+  renderDashboardInsights(current, computed);
 
   if (isSupporter(current)) {
     elements.dashboardMoneyLabel.textContent = "结算身份";
@@ -1593,12 +1629,15 @@ function renderDashboard(computed) {
   }
 
   renderWeightCard(current, "还没有上秤记录");
+  renderActivityFeed(computed);
 
   elements.dashboardLeaderboard.innerHTML = computed.displayResults.slice(0, 5).map((item) => rankRowHtml(item, computed, true)).join("");
 }
 
 function renderAdminDashboard(computed) {
   elements.weightForm.classList.add("hidden");
+  elements.dashboardInsights.classList.add("hidden");
+  elements.activityFeedSection.classList.add("hidden");
   elements.dashboardRateLabel.textContent = isCompetitionActive() ? "当前领跑" : "小队状态";
   elements.dashboardRankLabel.textContent = "参赛席位";
   elements.dashboardRank.textContent = `${getCompetitors().length}/${ACTIVITY.maxParticipants}`;
@@ -1647,6 +1686,9 @@ function renderWeightCard(participant, emptyText) {
   elements.weightSubmitButton.classList.toggle("hidden", !showEditor);
   elements.weightEditButton.classList.toggle("hidden", showEditor || !todayEntry);
   elements.weightCheckinCard.classList.toggle("hidden", showEditor || !todayEntry);
+  elements.weightFeedbackCard.classList.toggle("hidden", showEditor || !todayEntry);
+  elements.weightWarning.classList.add("hidden");
+  elements.weightSubmitButton.textContent = "更新体重";
 
   if (showEditor) {
     if (todayEntry && !elements.weightInput.value) {
@@ -1658,6 +1700,185 @@ function renderWeightCard(participant, emptyText) {
   elements.weightInput.value = "";
   elements.weightCheckinValue.textContent = `${formatNumber(todayEntry.weight, 1)}kg`;
   elements.weightCheckinMeta.textContent = `连续 ${streak} 天 · 本周 ${weekCount} 次`;
+  elements.weightFeedbackCard.innerHTML = weightFeedbackHtml(participant, todayEntry, today, weekStart, streak);
+}
+
+function weightFeedbackHtml(participant, todayEntry, today, weekStart, streak) {
+  const previousEntry = getPreviousEntryBefore(participant, today);
+  const previousDelta = previousEntry ? round1(previousEntry.weight - todayEntry.weight) : 0;
+  const weekStartWeight = getWeightAtDate(participant, addDaysISO(weekStart, -1));
+  const weekDelta = round1(weekStartWeight - todayEntry.weight);
+  return [
+    feedbackMetricHtml(previousEntry ? formatWeightChangeShort(previousDelta) : "首次", "比上次"),
+    feedbackMetricHtml(`${streak} 天`, "连续上秤"),
+    feedbackMetricHtml(formatWeightChangeShort(weekDelta), "本周变化"),
+  ].join("");
+}
+
+function feedbackMetricHtml(value, label) {
+  return `
+    <div>
+      <strong>${escapeHtml(value)}</strong>
+      <span>${escapeHtml(label)}</span>
+    </div>
+  `;
+}
+
+function renderDashboardInsights(current, computed) {
+  if (!elements.dashboardInsights) return;
+  const insights = getDashboardInsights(current, computed);
+  elements.dashboardInsights.classList.toggle("hidden", !insights.length);
+  elements.dashboardInsights.innerHTML = insights.map((item) => `
+    <div class="insight-chip">
+      <span>${escapeHtml(item.label)}</span>
+      <strong>${escapeHtml(item.value)}</strong>
+    </div>
+  `).join("");
+}
+
+function getDashboardInsights(current, computed) {
+  if (!isCompetitionActive() || !isCompetitor(current)) return [];
+  const result = computed.competitorResults.find((item) => item.id === current.id);
+  if (!result) return [];
+
+  const rankIndex = computed.competitorResults.findIndex((item) => item.id === current.id);
+  const previous = rankIndex > 0 ? computed.competitorResults[rankIndex - 1] : null;
+  const next = rankIndex >= 0 ? computed.competitorResults[rankIndex + 1] : null;
+  const distance = previous
+    ? {
+        label: "追上一名",
+        value: `${formatNumber(getKgNeededForRate(current, previous.lossRate), 1)}kg`,
+      }
+    : next
+      ? {
+          label: "领先第二",
+          value: `${formatNumber(Math.max(0, result.lossRate - next.lossRate), 2)} 个点`,
+        }
+      : {
+          label: "当前状态",
+          value: "独自领跑",
+        };
+
+  const halfKgPayout = getPayoutAfterWeightChange(current, computed, 0.5);
+  const currentPayout = computed.payouts[current.id];
+  const money = getPayoutDeltaText(currentPayout, halfKgPayout);
+  return [
+    distance,
+    {
+      label: "再减 0.5kg",
+      value: money,
+    },
+  ];
+}
+
+function getKgNeededForRate(participant, targetRate) {
+  const currentWeight = getCurrentWeight(participant);
+  const targetWeight = participant.initialWeight * (1 - targetRate / 100);
+  return Math.max(0, currentWeight - targetWeight);
+}
+
+function getPayoutAfterWeightChange(current, computed, kgDelta) {
+  const nextResults = computed.competitorResults.map((item) => {
+    if (item.id !== current.id) return { ...item };
+    const nextWeight = Math.max(30, item.currentWeight - kgDelta);
+    const nextDeltaKg = round1(item.initialWeight - nextWeight);
+    return {
+      ...item,
+      currentWeight: nextWeight,
+      deltaKg: nextDeltaKg,
+      lossRate: calculateLossRate(item.initialWeight, nextWeight),
+    };
+  });
+  const sorted = sortResults(nextResults);
+  const leaderRate = sorted[0]?.lossRate ?? 0;
+  const leaders = sorted.filter((item) => nearlyEqual(item.lossRate, leaderRate));
+  sorted.forEach((item) => {
+    item.gapToLeader = round2(Math.max(0, leaderRate - item.lossRate));
+  });
+  return computePayouts(sorted, leaders)[current.id];
+}
+
+function getPayoutDeltaText(currentPayout, nextPayout) {
+  if (!currentPayout || !nextPayout) return "看趋势";
+  const currentNet = currentPayout.status === "win" ? currentPayout.prize : -currentPayout.pay;
+  const nextNet = nextPayout.status === "win" ? nextPayout.prize : -nextPayout.pay;
+  const delta = Math.round(nextNet - currentNet);
+  if (delta > 0) return `账本 +¥${formatMoney(delta)}`;
+  if (delta < 0) return `账本 -¥${formatMoney(Math.abs(delta))}`;
+  return "账本不变";
+}
+
+function renderActivityFeed(computed) {
+  if (!elements.activityFeedSection || !elements.activityFeed) return;
+  if (isAdminSession()) {
+    elements.activityFeedSection.classList.add("hidden");
+    return;
+  }
+  const items = getActivityFeedItems(computed);
+  elements.activityFeedSection.classList.toggle("hidden", !items.length);
+  elements.activityFeed.innerHTML = items.map((item) => `
+    <div class="activity-feed-item">
+      <div>
+        <strong>${escapeHtml(item.title)}</strong>
+        <small>${escapeHtml(item.detail)}</small>
+      </div>
+      <span>${escapeHtml(item.badge)}</span>
+    </div>
+  `).join("");
+}
+
+function getActivityFeedItems(computed) {
+  const scopedParticipants = viewScope === VIEW_SCOPE_COMPETITORS ? getCompetitors() : state.participants;
+  const entryItems = scopedParticipants
+    .flatMap((participant) => getRecentEntries(participant, 2).map((entry) => {
+      const previous = getPreviousEntryBefore(participant, entry.date);
+      const delta = previous ? round1(previous.weight - entry.weight) : 0;
+      return {
+        sortDate: `${entry.date}T${entry.updatedAt || entry.createdAt || ""}`,
+        title: `${participant.name} ${entry.date === getTodayISO() ? "今日上秤" : `${formatDateShort(entry.date)} 上秤`}`,
+        detail: previous ? `比上次${formatWeightChangeShort(delta)}` : "留下第一条记录",
+        badge: `${formatNumber(entry.weight, 1)}kg`,
+      };
+    }));
+
+  const rankMoves = isCompetitionActive()
+    ? getRankMoveItems(computed).map((item) => ({ ...item, sortDate: `${getTodayISO()}T99` }))
+    : [];
+
+  return [...rankMoves, ...entryItems]
+    .sort((a, b) => b.sortDate.localeCompare(a.sortDate))
+    .slice(0, 3);
+}
+
+function getRecentEntries(participant, limit) {
+  return [...(participant.entries || [])]
+    .filter((entry) => entry?.date && Number(entry.weight) > 0)
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, limit);
+}
+
+function getRankMoveItems(computed) {
+  const yesterday = addDaysISO(getTodayISO(), -1);
+  const previousResults = sortResults(getCompetitors().map((participant) => ({
+    ...participant,
+    currentWeight: getWeightAtDate(participant, yesterday),
+    deltaKg: round1(participant.initialWeight - getWeightAtDate(participant, yesterday)),
+    lossRate: calculateLossRate(participant.initialWeight, getWeightAtDate(participant, yesterday)),
+  })));
+  const previousRanks = Object.fromEntries(previousResults.map((item, index) => [item.id, index + 1]));
+  return computed.competitorResults
+    .map((item) => {
+      const previousRank = previousRanks[item.id] || item.competitionRank;
+      const move = previousRank - item.competitionRank;
+      if (move <= 0) return null;
+      return {
+        title: `${item.name} 反超 ${move} 位`,
+        detail: `现在第 ${item.competitionRank} 名`,
+        badge: formatRate(item.lossRate),
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 2);
 }
 
 function updateSeasonProgress(isActive) {
@@ -2715,6 +2936,7 @@ function renderTrendSummary(computed) {
   elements.trendTotalNote.innerHTML = results.length
     ? `${escapeHtml(summaryText)}${animalText ? `<span>${escapeHtml(animalText)}</span>` : ""}`
     : "当前范围暂无成员";
+  elements.trendProjection.textContent = getTrendProjectionText(computed);
 }
 
 function getWeightEquivalentText(weightKg) {
@@ -2732,6 +2954,62 @@ function getWeightEquivalentText(weightKg) {
 
   if (match) return `合计约等于一只${match.name}`;
   return `合计已超过一只${last.name}`;
+}
+
+function getTrendProjectionText(computed) {
+  if (!isCompetitionActive() || !isMemberSession()) return "收官预测随记录更新";
+  const current = getCurrentUser();
+  const projection = getProjectionForParticipant(current, getTimeline());
+  if (!projection) return "多记几次，会显示收官预测";
+  if (projection.unstable) return "近 7 天变化偏快，先看趋势不下结论";
+  const rankText = getProjectedRankText(current, projection.rate, computed);
+  return `按近 7 天节奏，收官约 ${formatRate(projection.rate)}${rankText}`;
+}
+
+function getProjectedRankText(current, projectedRate, computed) {
+  if (!isCompetitor(current)) return "";
+  const projected = computed.competitorResults.map((item) => ({
+    id: item.id,
+    lossRate: item.id === current.id ? projectedRate : item.lossRate,
+    deltaKg: item.deltaKg,
+  }));
+  const sorted = sortResults(projected);
+  const rank = sorted.findIndex((item) => item.id === current.id) + 1;
+  return rank ? ` · 约第 ${rank}` : "";
+}
+
+function getProjectionForParticipant(participant, timeline) {
+  if (!participant || !timeline.length) return null;
+  const today = getTodayISO();
+  const anchorDate = addDaysISO(today, -PREDICTION_LOOKBACK_DAYS);
+  const recentEntries = [...(participant.entries || [])]
+    .filter((entry) => entry.date >= anchorDate && entry.date <= today)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  if (recentEntries.length < 2) return null;
+  const firstEntry = recentEntries[0];
+  const latestEntry = recentEntries[recentEntries.length - 1];
+  const actualSpan = daysBetween(firstEntry.date, latestEntry.date);
+  if (actualSpan < 2) return null;
+  const latestWeight = latestEntry.weight;
+  const anchorWeight = firstEntry.weight;
+  const dailyDelta = (anchorWeight - latestWeight) / actualSpan;
+  if (!Number.isFinite(dailyDelta) || Math.abs(dailyDelta) < 0.01) return null;
+  const daysLeft = Math.max(0, daysBetween(latestEntry.date, ACTIVITY.endDate));
+  const projectedWeight = clamp(latestWeight - dailyDelta * daysLeft, 30, 250);
+  const rate = calculateLossRate(participant.initialWeight, projectedWeight);
+  const latestRate = calculateLossRate(participant.initialWeight, latestWeight);
+  if (Math.abs(rate - latestRate) > 10) {
+    return {
+      latestRate,
+      rate,
+      unstable: true,
+    };
+  }
+  return {
+    latestRate,
+    rate,
+    direction: rate >= latestRate ? "down" : "up",
+  };
 }
 
 function handleTrendPointer(event) {
@@ -2767,8 +3045,9 @@ function drawTrendChart(computed) {
   const visibleWidth = scroll?.clientWidth || canvas.offsetWidth;
   const pad = { top: 24, right: 24, bottom: 42, left: 8 };
   const minPointGap = 46;
+  const projectionPad = isMemberSession() && isCompetitionActive() ? 92 : 0;
   const chartWidth = isCompetitionActive()
-    ? Math.max(visibleWidth, pad.left + pad.right + Math.max(260, (timeline.length - 1) * minPointGap))
+    ? Math.max(visibleWidth, pad.left + pad.right + projectionPad + Math.max(260, (timeline.length - 1) * minPointGap))
     : visibleWidth;
   canvas.style.width = `${Math.ceil(chartWidth)}px`;
 
@@ -2805,8 +3084,11 @@ function drawTrendChart(computed) {
     ...participant,
     points: timeline.map((tick) => calculateLossRate(participant.initialWeight, getWeightAtTick(participant, tick))),
   }));
+  const current = getCurrentUser();
+  const projection = current ? getProjectionForParticipant(current, timeline) : null;
 
   const allValues = series.flatMap((item) => item.points);
+  if (projection && !projection.unstable) allValues.push(projection.rate);
   let minValue = Math.min(0, ...allValues);
   let maxValue = Math.max(0, ...allValues);
   if (maxValue - minValue < 4) {
@@ -2818,9 +3100,10 @@ function drawTrendChart(computed) {
     maxValue += 0.8;
   }
 
-  const width = rect.width - pad.left - pad.right;
+  const width = rect.width - pad.left - pad.right - projectionPad;
   const height = rect.height - pad.top - pad.bottom;
   const xFor = (index) => pad.left + (timeline.length === 1 ? width : (width * index) / (timeline.length - 1));
+  const projectionX = rect.width - pad.right;
   const yFor = (value) => pad.top + ((maxValue - value) / (maxValue - minValue)) * height;
   const viewportLeft = scroll?.scrollLeft || 0;
   const viewportWidth = scroll?.clientWidth || rect.width;
@@ -2914,9 +3197,45 @@ function drawTrendChart(computed) {
     ctx.globalAlpha = 1;
   });
 
+  if (projection && current && !projection.unstable) {
+    drawProjectionLine(ctx, current, projection, timeline, xFor, yFor, projectionX);
+  }
+
   if (trendHoverIndex !== null && timeline[trendHoverIndex]) {
     drawTrendTooltip(ctx, rect, timeline, series, xFor, yFor);
   }
+}
+
+function drawProjectionLine(ctx, participant, projection, timeline, xFor, yFor, projectionX) {
+  if (!timeline.length || projectionX <= xFor(timeline.length - 1) + 8) return;
+  const startX = xFor(timeline.length - 1);
+  const startY = yFor(projection.latestRate);
+  const endY = yFor(projection.rate);
+  ctx.save();
+  ctx.strokeStyle = participant.color || "#1f7a5c";
+  ctx.globalAlpha = 0.42;
+  ctx.lineWidth = 1.8;
+  ctx.setLineDash([6, 6]);
+  ctx.beginPath();
+  ctx.moveTo(startX, startY);
+  ctx.lineTo(projectionX, endY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.arc(projectionX, endY, 4.6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = participant.color || "#1f7a5c";
+  ctx.beginPath();
+  ctx.arc(projectionX, endY, 3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#738091";
+  ctx.font = "650 10px Inter, system-ui, sans-serif";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  ctx.fillText("预测", projectionX, Math.max(12, endY - 13));
+  ctx.restore();
 }
 
 function drawSmoothPath(ctx, points) {
@@ -3082,6 +3401,12 @@ function getLatestEntry(participant) {
   return [...participant.entries].sort((a, b) => b.date.localeCompare(a.date))[0];
 }
 
+function getPreviousEntryBefore(participant, date) {
+  return [...(participant.entries || [])]
+    .filter((entry) => entry.date < date)
+    .sort((a, b) => b.date.localeCompare(a.date))[0] || null;
+}
+
 function getLastEntryLabel(participant, fallback) {
   const latest = getLatestEntry(participant);
   if (!latest) return fallback;
@@ -3103,6 +3428,21 @@ function getEntryOnDate(participant, date) {
   return Array.isArray(participant?.entries)
     ? participant.entries.find((entry) => entry.date === date)
     : null;
+}
+
+function getUnusualWeightDelta(participant, date, weight) {
+  const existingToday = getEntryOnDate(participant, date);
+  const baseline = existingToday || getPreviousEntryBefore(participant, date);
+  if (!baseline) return 0;
+  const delta = round1(weight - baseline.weight);
+  return Math.abs(delta) >= UNUSUAL_WEIGHT_DELTA_KG ? delta : 0;
+}
+
+function matchesPendingWeightConfirmation(participantId, date, weight) {
+  return pendingWeightConfirmation
+    && pendingWeightConfirmation.participantId === participantId
+    && pendingWeightConfirmation.date === date
+    && nearlyEqual(pendingWeightConfirmation.weight, round1(weight));
 }
 
 function getWeightAtTick(participant, tick) {
@@ -3538,6 +3878,12 @@ function formatRate(rate) {
 function formatSignedKg(value) {
   const prefix = value > 0 ? "已减" : value < 0 ? "增重" : "持平";
   return `${prefix} ${formatNumber(Math.abs(value), 1)}kg`;
+}
+
+function formatWeightChangeShort(value) {
+  if (value > 0) return `轻 ${formatNumber(Math.abs(value), 1)}kg`;
+  if (value < 0) return `重 ${formatNumber(Math.abs(value), 1)}kg`;
+  return "持平";
 }
 
 function getBodyStatsText(participant, weight) {
