@@ -15,6 +15,7 @@ const STATIC_FILES = new Set([
   "index.html",
   "styles.css",
   "app.js",
+  "prediction.js",
   "config.js",
   "favicon.svg",
   "apple-touch-icon.svg",
@@ -62,7 +63,7 @@ function setStaticHeaders(response, filename) {
     return;
   }
 
-  if (filename === "index.html" || filename === "app.js" || filename === "styles.css") {
+  if (filename === "index.html" || filename === "app.js" || filename === "prediction.js" || filename === "styles.css") {
     response.setHeader("Cache-Control", "no-cache");
     return;
   }
