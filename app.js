@@ -1884,7 +1884,7 @@ function getActivityFeedItems(computed) {
         ...formatActivityTimestamp(entry),
         actor: participant.name,
         action: "上秤",
-        detail: getActivityEntryDetail(participant, entry, previous, delta, computed),
+        detail: getActivityEntryDetail(participant, entry, previous, delta),
         badge: `${formatNumber(entry.weight, 1)}kg`,
         kind: entry.date === getTodayISO() ? "today" : "record",
       };
@@ -1902,12 +1902,11 @@ function getRecentEntries(participant, limit) {
     .slice(0, limit);
 }
 
-function getActivityEntryDetail(participant, entry, previous, delta, computed) {
+function getActivityEntryDetail(participant, entry, previous, delta) {
   if (!previous) return "首次上秤，坐标入队";
+  const rankHighlight = getEntryRankHighlight(participant, entry);
+  if (rankHighlight) return rankHighlight;
   if (isBestWeightAtEntry(participant, entry)) return "刷新历史最低";
-  const result = computed.competitorResults.find((item) => item.id === participant.id);
-  if (entry.date === getTodayISO() && result?.competitionRank === 1) return "守住冠军位";
-  if (entry.date === getTodayISO() && result?.competitionRank && result.competitionRank <= 3) return `暂列第 ${result.competitionRank}`;
   const streak = getCurrentCheckinStreak(participant, entry.date);
   if (entry.date === getTodayISO() && streak >= 3) return `连续上秤 ${streak} 天`;
   return formatWeightComparedWithPrevious(delta);
@@ -1917,6 +1916,36 @@ function isBestWeightAtEntry(participant, entry) {
   return getCheckinEntries(participant)
     .filter((item) => item.date <= entry.date)
     .every((item) => Number(item.weight) >= Number(entry.weight));
+}
+
+function getEntryRankHighlight(participant, entry) {
+  if (!isCompetitionActive() || !isCompetitor(participant)) return "";
+  const currentRank = getCompetitionRankAtDate(participant.id, entry.date);
+  if (!currentRank) return "";
+
+  const previousRank = getCompetitionRankAtDate(participant.id, addDaysISO(entry.date, -1));
+  const move = previousRank ? previousRank - currentRank : 0;
+  if (move > 0) {
+    return currentRank === 1 ? "夺得冠军位" : `前进 ${move} 名 · 现在第 ${currentRank}`;
+  }
+
+  if (entry.date === getTodayISO() && currentRank === 1) return "守住冠军位";
+  if (entry.date === getTodayISO() && currentRank <= 3) return `暂列第 ${currentRank}`;
+  return "";
+}
+
+function getCompetitionRankAtDate(participantId, date) {
+  const results = sortResults(getCompetitors().map((participant) => {
+    const currentWeight = getWeightAtDate(participant, date);
+    return {
+      ...participant,
+      currentWeight,
+      deltaKg: round1(participant.initialWeight - currentWeight),
+      lossRate: calculateLossRate(participant.initialWeight, currentWeight),
+    };
+  }));
+  const index = results.findIndex((item) => item.id === participantId);
+  return index >= 0 ? index + 1 : 0;
 }
 
 function updateSeasonProgress(isActive) {
