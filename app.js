@@ -1852,7 +1852,7 @@ function renderActivityFeed(computed) {
   const visibleItems = activityFeedExpanded ? items.slice(0, 10) : items.slice(0, 3);
   elements.activityFeedSection.classList.toggle("hidden", !items.length);
   elements.activityFeedToggle.classList.toggle("hidden", items.length <= 3);
-  elements.activityFeedToggle.textContent = activityFeedExpanded ? "收起" : `展开 ${Math.min(10, items.length)} 条`;
+  elements.activityFeedToggle.textContent = activityFeedExpanded ? "收起" : "展开";
   elements.activityFeed.innerHTML = visibleItems.map((item) => `
     <div class="activity-feed-item ${item.kind ? `is-${escapeHtml(item.kind)}` : ""}">
       <time datetime="${escapeHtml(item.datetime || "")}">
