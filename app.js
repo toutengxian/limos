@@ -1890,17 +1890,7 @@ function getActivityFeedItems(computed) {
       };
     }));
 
-  const rankMoves = isCompetitionActive()
-    ? getRankMoveItems(computed).map((item) => ({
-        ...item,
-        dateLabel: formatDateShort(getTodayISO()),
-        timeLabel: formatShanghaiClock(new Date()),
-        datetime: new Date().toISOString(),
-        sortDate: `${getTodayISO()}T99`,
-      }))
-    : [];
-
-  return [...rankMoves, ...entryItems]
+  return entryItems
     .sort((a, b) => b.sortDate.localeCompare(a.sortDate))
     .slice(0, 10);
 }
@@ -1927,32 +1917,6 @@ function isBestWeightAtEntry(participant, entry) {
   return getCheckinEntries(participant)
     .filter((item) => item.date <= entry.date)
     .every((item) => Number(item.weight) >= Number(entry.weight));
-}
-
-function getRankMoveItems(computed) {
-  const yesterday = addDaysISO(getTodayISO(), -1);
-  const previousResults = sortResults(getCompetitors().map((participant) => ({
-    ...participant,
-    currentWeight: getWeightAtDate(participant, yesterday),
-    deltaKg: round1(participant.initialWeight - getWeightAtDate(participant, yesterday)),
-    lossRate: calculateLossRate(participant.initialWeight, getWeightAtDate(participant, yesterday)),
-  })));
-  const previousRanks = Object.fromEntries(previousResults.map((item, index) => [item.id, index + 1]));
-  return computed.competitorResults
-    .map((item) => {
-      const previousRank = previousRanks[item.id] || item.competitionRank;
-      const move = previousRank - item.competitionRank;
-      if (move <= 0) return null;
-      return {
-        actor: item.name,
-        action: item.competitionRank === 1 ? "登顶" : `反超 ${move} 位`,
-        detail: item.competitionRank === 1 ? "夺得冠军位" : `前进 ${move} 名 · 现在第 ${item.competitionRank}`,
-        badge: formatRate(item.lossRate),
-        kind: "rank",
-      };
-    })
-    .filter(Boolean)
-    .slice(0, 2);
 }
 
 function updateSeasonProgress(isActive) {
