@@ -1878,8 +1878,9 @@ function getActivityFeedItems(computed) {
     .flatMap((participant) => getRecentEntries(participant, 2).map((entry) => {
       const previous = getPreviousEntryBefore(participant, entry.date);
       const delta = previous ? round1(previous.weight - entry.weight) : 0;
+      const activityStamp = getEntryActivityStamp(entry);
       return {
-        sortDate: entry.updatedAt || entry.createdAt || `${entry.date}T00:00:00+08:00`,
+        sortDate: activityStamp,
         ...formatActivityTimestamp(entry),
         actor: participant.name,
         action: "上秤",
@@ -3872,13 +3873,18 @@ function formatDateShort(iso) {
 }
 
 function formatActivityTimestamp(entry) {
-  const stamp = entry.updatedAt || entry.createdAt || "";
-  const date = stamp ? new Date(stamp) : null;
+  const stamp = getEntryActivityStamp(entry);
+  const hasExplicitStamp = Boolean(entry?.createdAt || entry?.updatedAt);
+  const date = hasExplicitStamp ? new Date(stamp) : null;
   return {
     dateLabel: formatDateShort(entry.date),
     timeLabel: date && !Number.isNaN(date.getTime()) ? formatShanghaiClock(date) : "--:--",
     datetime: stamp || `${entry.date}T00:00:00+08:00`,
   };
+}
+
+function getEntryActivityStamp(entry) {
+  return entry?.createdAt || entry?.updatedAt || `${entry?.date || getTodayISO()}T00:00:00+08:00`;
 }
 
 function formatShanghaiClock(date) {
