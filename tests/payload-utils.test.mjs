@@ -2,10 +2,30 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  createAvatarSignature,
   mergePayloadForWrite,
   mergeWeightEntriesIntoPayload,
+  stripPayloadAvatars,
   upsertPayloadWeightEntry,
 } from "../api/payload-utils.js";
+
+test("stripPayloadAvatars exposes avatar signatures without avatar data", () => {
+  const stripped = stripPayloadAvatars({
+    participants: [{ id: "p1", name: "A", avatar: "data:image/png;base64,abc", entries: [] }],
+  });
+
+  assert.equal(stripped.participants[0].avatar, undefined);
+  assert.equal(stripped.participants[0].avatarSignature, createAvatarSignature("data:image/png;base64,abc"));
+});
+
+test("stripPayloadAvatars drops stale avatar signatures when avatar is absent", () => {
+  const stripped = stripPayloadAvatars({
+    participants: [{ id: "p1", name: "A", avatarSignature: "old", entries: [] }],
+  });
+
+  assert.equal(stripped.participants[0].avatar, undefined);
+  assert.equal(stripped.participants[0].avatarSignature, undefined);
+});
 
 test("mergePayloadForWrite preserves existing avatars when incoming payload omits them", () => {
   const merged = mergePayloadForWrite(
@@ -18,6 +38,7 @@ test("mergePayloadForWrite preserves existing avatars when incoming payload omit
   );
 
   assert.equal(merged.participants[0].avatar, "data:image/png;base64,abc");
+  assert.equal(merged.participants[0].avatarSignature, createAvatarSignature("data:image/png;base64,abc"));
   assert.equal(merged.participants[0].name, "A+");
 });
 

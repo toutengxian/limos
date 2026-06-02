@@ -1,4 +1,5 @@
 import {
+  createAvatarSignature,
   createPayloadEtag,
   findParticipantAvatar,
   getDefaultPayload,
@@ -34,7 +35,7 @@ export default async function handler(request, response) {
         const avatarParticipantId = requestUrl.searchParams.get("avatar");
         if (avatarParticipantId) {
           const avatar = findParticipantAvatar(payload, avatarParticipantId);
-          const avatarBody = { id: avatarParticipantId, avatar };
+          const avatarBody = { id: avatarParticipantId, avatar, avatarSignature: createAvatarSignature(avatar) };
           const avatarEtag = createPayloadEtag(avatarBody);
           if (request.headers["if-none-match"] === avatarEtag) {
             sendNotModified(response, avatarEtag);

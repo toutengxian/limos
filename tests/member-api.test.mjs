@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import memberHandler from "../api/member.js";
+import { createAvatarSignature } from "../api/payload-utils.js";
 import {
   createJsonRequest,
   createResponse,
@@ -53,6 +54,7 @@ test("member POST join writes the full payload and returns avatar-stripped paylo
       const responseParticipant = response.json().payload.participants[0];
       assert.equal(responseParticipant.name, "A");
       assert.equal(responseParticipant.avatar, undefined);
+      assert.equal(responseParticipant.avatarSignature, createAvatarSignature("data:image/png;base64,abc"));
       assert.ok(response.headers.etag);
     });
   });

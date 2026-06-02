@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import stateHandler from "../api/state.js";
+import { createAvatarSignature } from "../api/payload-utils.js";
 import {
   createJsonRequest,
   createResponse,
@@ -46,6 +47,7 @@ test("state GET merges weight rows without mutating the cached payload object", 
 
       const participant = response.json().payload.participants[0];
       assert.equal(participant.avatar, undefined);
+      assert.equal(participant.avatarSignature, createAvatarSignature("data:image/png;base64,abc"));
       assert.deepEqual(participant.entries, [{
         date: "2026-05-15",
         weight: 78.8,
@@ -79,6 +81,7 @@ test("state GET avatar endpoint returns only the requested avatar", async () => 
       assert.deepEqual(response.json(), {
         id: "p1",
         avatar: "data:image/png;base64,abc",
+        avatarSignature: createAvatarSignature("data:image/png;base64,abc"),
       });
       assert.ok(response.headers.etag);
     });

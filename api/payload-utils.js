@@ -16,11 +16,20 @@ export function createPayloadEtag(payload) {
   return `"${hash.slice(0, 32)}"`;
 }
 
+export function createAvatarSignature(avatar) {
+  if (!avatar) return "";
+  const hash = createHash("sha256").update(String(avatar)).digest("base64url");
+  return `${String(avatar).length}:${hash.slice(0, 16)}`;
+}
+
 export function stripPayloadAvatars(payload) {
   return {
     ...payload,
     participants: Array.isArray(payload?.participants)
-      ? payload.participants.map(({ avatar, ...participant }) => participant)
+      ? payload.participants.map(({ avatar, avatarSignature, ...participant }) => ({
+        ...participant,
+        ...(avatar ? { avatarSignature: createAvatarSignature(avatar) } : {}),
+      }))
       : [],
   };
 }
@@ -40,12 +49,19 @@ export function mergePayloadForWrite(existingPayload, incomingPayload) {
   return {
     ...incomingPayload,
     participants: Array.isArray(incomingPayload?.participants)
-      ? incomingPayload.participants.map((participant) => {
+      ? incomingPayload.participants.map(({ avatar, avatarSignature, ...participant }) => {
         const existing = existingById.get(participant.id);
-        if (!participant.avatar && existing?.avatar) {
-          return { ...participant, avatar: existing.avatar };
+        if (!avatar && existing?.avatar) {
+          return {
+            ...participant,
+            avatar: existing.avatar,
+            avatarSignature: createAvatarSignature(existing.avatar),
+          };
         }
-        return participant;
+        return {
+          ...participant,
+          ...(avatar ? { avatar, avatarSignature: createAvatarSignature(avatar) } : {}),
+        };
       })
       : [],
   };

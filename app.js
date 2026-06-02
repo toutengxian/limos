@@ -542,13 +542,25 @@ function mergeLocalAvatars(remoteState) {
   const localState = loadLocalState();
   const localAvatars = new Map(localState.participants
     .filter((participant) => participant.avatar)
-    .map((participant) => [participant.id, participant.avatar]));
+    .map((participant) => [participant.id, {
+      avatar: participant.avatar,
+      avatarSignature: participant.avatarSignature || "",
+    }]));
 
   return {
     ...remoteState,
     participants: remoteState.participants.map((participant) => {
-      if (participant.avatar || !localAvatars.has(participant.id)) return participant;
-      return { ...participant, avatar: localAvatars.get(participant.id) };
+      const localAvatar = localAvatars.get(participant.id);
+      if (participant.avatar || !localAvatar) return participant;
+      const signatureMatches = !participant.avatarSignature
+        || participant.avatarSignature === localAvatar.avatarSignature
+        || pendingAvatarUploadIds.has(participant.id);
+      if (!signatureMatches) return participant;
+      return {
+        ...participant,
+        avatar: localAvatar.avatar,
+        avatarSignature: participant.avatarSignature || localAvatar.avatarSignature,
+      };
     }),
   };
 }
@@ -712,6 +724,7 @@ function normalizeParticipant(participant, index = 0) {
     initialWeight: Number(participant.initialWeight) || 0,
     heightCm: Number(participant.heightCm) || 0,
     avatar: participant.avatar || "",
+    avatarSignature: participant.avatarSignature || "",
     userRole: normalizeUserRole(participant.userRole || participant.role),
     accessCodeHash: participant.accessCodeHash || "",
     joinedAt: participant.joinedAt || new Date().toISOString(),
@@ -840,13 +853,16 @@ function createApiStore(config) {
       },
     });
 
-    if (response.status === 404) return "";
+    if (response.status === 404) return { avatar: "", avatarSignature: "" };
     if (!response.ok) {
       throw new Error(`Avatar API failed: ${response.status}`);
     }
 
     const data = await response.json();
-    return data?.avatar || "";
+    return {
+      avatar: data?.avatar || "",
+      avatarSignature: data?.avatarSignature || "",
+    };
   }
 
   async function requestWeightEntry(mutation) {
@@ -1043,10 +1059,13 @@ async function hydrateMissingAvatars() {
   for (const target of targets) {
     avatarHydrationInFlight.add(target.id);
     try {
-      const avatar = await dataStore.loadAvatar(target.id);
+      const avatarResult = await dataStore.loadAvatar(target.id);
+      const avatar = typeof avatarResult === "string" ? avatarResult : avatarResult?.avatar || "";
+      const avatarSignature = typeof avatarResult === "string" ? "" : avatarResult?.avatarSignature || "";
       const participant = state.participants.find((item) => item.id === target.id);
       if (participant && avatar && !participant.avatar) {
         participant.avatar = avatar;
+        participant.avatarSignature = avatarSignature || participant.avatarSignature || "";
         saveLocalState(state);
         if (elements.mainApp.classList.contains("hidden")) {
           renderOnboardingOptions();
