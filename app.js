@@ -170,6 +170,8 @@ const elements = {
   dashboardWeightDelta: $("#dashboard-weight-delta"),
   dashboardGap: $("#dashboard-gap"),
   dashboardInsights: $("#dashboard-insights"),
+  dashboardProjectionCard: $("#dashboard-projection-card"),
+  dashboardProjectionText: $("#dashboard-projection-text"),
   daysLeft: $("#days-left"),
   seasonProgressLabel: $("#season-progress-label"),
   seasonProgressFill: $("#season-progress-fill"),
@@ -196,7 +198,6 @@ const elements = {
   trendTotalScope: $("#trend-total-scope"),
   trendTotalLoss: $("#trend-total-loss"),
   trendTotalNote: $("#trend-total-note"),
-  trendProjection: $("#trend-projection"),
   trendScroll: $("#trend-scroll"),
   trendAxisCanvas: $("#trend-axis-canvas"),
   trendCanvas: $("#trend-canvas"),
@@ -208,6 +209,9 @@ const elements = {
   ledgerHelpButton: $("#ledger-help-button"),
   ledgerHelpModal: $("#ledger-help-modal"),
   ledgerHelpClose: $("#ledger-help-close"),
+  predictionHelpButton: $("#prediction-help-button"),
+  predictionHelpModal: $("#prediction-help-modal"),
+  predictionHelpClose: $("#prediction-help-close"),
   milestoneModal: $("#milestone-modal"),
   milestoneClose: $("#milestone-close"),
   milestoneShare: $("#milestone-share"),
@@ -304,6 +308,11 @@ function bindEvents() {
   elements.ledgerHelpModal.addEventListener("click", (event) => {
     if (event.target === elements.ledgerHelpModal) closeLedgerHelp();
   });
+  elements.predictionHelpButton.addEventListener("click", openPredictionHelp);
+  elements.predictionHelpClose.addEventListener("click", closePredictionHelp);
+  elements.predictionHelpModal.addEventListener("click", (event) => {
+    if (event.target === elements.predictionHelpModal) closePredictionHelp();
+  });
   elements.milestoneClose.addEventListener("click", closeMilestoneModal);
   elements.milestoneShare.addEventListener("click", shareMilestoneCard);
   elements.milestoneCta.addEventListener("click", () => {
@@ -360,6 +369,10 @@ function bindEvents() {
     }
     if (!elements.ledgerHelpModal.classList.contains("hidden")) {
       closeLedgerHelp();
+      return;
+    }
+    if (!elements.predictionHelpModal.classList.contains("hidden")) {
+      closePredictionHelp();
     }
   });
 }
@@ -372,6 +385,16 @@ function openLedgerHelp() {
 function closeLedgerHelp() {
   elements.ledgerHelpModal.classList.add("hidden");
   elements.ledgerHelpButton.focus();
+}
+
+function openPredictionHelp() {
+  elements.predictionHelpModal.classList.remove("hidden");
+  elements.predictionHelpClose.focus();
+}
+
+function closePredictionHelp() {
+  elements.predictionHelpModal.classList.add("hidden");
+  elements.predictionHelpButton.focus();
 }
 
 function openMilestoneModal(monthKey) {
@@ -1600,6 +1623,7 @@ function renderDashboard(computed) {
       : `初始 ${formatNumber(current.initialWeight, 1)}kg · ${getBodyStatsText(current, current.initialWeight)}`;
     elements.dashboardGap.textContent = "5 位参赛成员坐满自动开局";
     renderDashboardInsights(current, computed);
+    renderDashboardProjection(current);
     elements.weightForm.classList.toggle("hidden", isCompetitor(current));
     renderWeightCard(current, "陪伴用户可以先记录体重");
     renderActivityFeed(computed);
@@ -1622,6 +1646,7 @@ function renderDashboard(computed) {
     ? computed.leaders.length > 1 ? "并列领跑，等下一次破局" : "你在领跑"
     : `落后第一名 ${formatNumber(result.gapToLeader, 2)} 个百分点`;
   renderDashboardInsights(current, computed);
+  renderDashboardProjection(current);
 
   if (isSupporter(current)) {
     elements.dashboardMoneyLabel.textContent = "结算身份";
@@ -1643,6 +1668,7 @@ function renderDashboard(computed) {
 function renderAdminDashboard(computed) {
   elements.weightForm.classList.add("hidden");
   elements.dashboardInsights.classList.add("hidden");
+  renderDashboardProjection(null);
   elements.activityFeedSection.classList.add("hidden");
   elements.dashboardRateLabel.textContent = isCompetitionActive() ? "当前领跑" : "小队状态";
   elements.dashboardRankLabel.textContent = "参赛席位";
@@ -1760,6 +1786,13 @@ function renderDashboardInsights(current, computed) {
       <small>${escapeHtml(item.note || "")}</small>
     </div>
   `).join("");
+}
+
+function renderDashboardProjection(participant) {
+  if (!elements.dashboardProjectionCard || !elements.dashboardProjectionText) return;
+  const projectionText = getProjectionDisplayText(participant);
+  elements.dashboardProjectionCard.classList.toggle("hidden", !projectionText);
+  elements.dashboardProjectionText.textContent = projectionText || "--";
 }
 
 function getDashboardInsights(current, computed) {
@@ -3003,9 +3036,6 @@ function renderTrendSummary(computed) {
   elements.trendTotalNote.innerHTML = results.length
     ? `${escapeHtml(summaryText)}${animalText ? `<span>${escapeHtml(animalText)}</span>` : ""}`
     : "当前范围暂无成员";
-  const projectionText = getTrendProjectionText();
-  elements.trendProjection.textContent = projectionText;
-  elements.trendProjection.classList.toggle("hidden", !projectionText);
 }
 
 function getWeightEquivalentText(weightKg) {
@@ -3025,10 +3055,9 @@ function getWeightEquivalentText(weightKg) {
   return `合计已超过一只${last.name}`;
 }
 
-function getTrendProjectionText() {
-  if (!isCompetitionActive() || !isMemberSession()) return "";
-  const current = getCurrentUser();
-  const projection = getProjectionForParticipant(current);
+function getProjectionDisplayText(participant) {
+  if (!isCompetitionActive() || !isMemberSession() || !participant) return "";
+  const projection = getProjectionForParticipant(participant);
   if (!projection || projection.confidence !== "normal") return "";
   return `预测收官时约 ${formatNumber(projection.projectedWeight, 1)}kg`;
 }
