@@ -139,7 +139,11 @@
     const medianResidual = median(residuals);
     const mad = median(residuals.map((residual) => Math.abs(residual - medianResidual)));
     const threshold = Math.max(1.2, mad * 2.8);
-    const filtered = series.filter((point, index) => residuals[index] <= threshold);
+    const edgeThreshold = threshold * 2;
+    const filtered = series.filter((point, index) => {
+      const isEdgePoint = index === 0 || index === series.length - 1;
+      return residuals[index] <= (isEdgePoint ? edgeThreshold : threshold);
+    });
     const finalSeries = filtered.length >= minObservations ? filtered : series;
     const finalFit = fitWeightedLine(finalSeries);
     if (!finalFit) return firstFit;
@@ -253,7 +257,7 @@
     const spanScore = clamp((stats.spanDays - 7) / 35, 0, 1);
     const coverageScore = clamp(stats.coverage / 0.55, 0, 1);
     const gapPenalty = clamp((stats.maxGapDays - 5) / 12, 0, 0.3);
-    const noisePenalty = clamp((trend.residualMad || 0) / 1.4, 0, 0.35);
+    const noisePenalty = clamp((trend.residualMad || 0) / 2.4, 0, 0.25);
     const agreementPenalty = clamp((trend.slopeSpread || 0) / 0.08, 0, 0.25);
     const capPenalty = Math.abs(trend.slope - constrainedSlope) > 0.02 ? 0.12 : 0;
     return clamp(
@@ -269,7 +273,6 @@
     if (stats.spanDays < NORMAL_CONFIDENCE_SPAN_DAYS) return "low";
     if (reliability < 0.48) return "low";
     if (trend.keptCount < trend.originalCount && reliability < 0.58) return "low";
-    if (Math.abs(trend.slope - constrainedSlope) > 0.04 && reliability < 0.62) return "low";
     return "normal";
   }
 
