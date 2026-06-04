@@ -113,6 +113,7 @@ supabase.sql
 
 ```text
 LIMOS_STATE_ID=limos-2026
+LIMOS_JOIN_CODE=YOUR_TEAM_INVITE_CODE
 ```
 
 开发状态使用：

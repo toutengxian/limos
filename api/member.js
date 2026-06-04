@@ -68,6 +68,8 @@ export default async function handler(request, response) {
 
 function applyMemberAction(payload, body) {
   if (body?.action === "join") {
+    const inviteResult = validateJoinInviteCode(body.inviteCode);
+    if (!inviteResult.ok) return inviteResult;
     return joinParticipant(payload, body.participant);
   }
   if (body?.action === "profile") {
@@ -77,4 +79,14 @@ function applyMemberAction(payload, body) {
     return removeParticipant(payload, String(body.participantId || ""));
   }
   return { ok: false, status: 400, error: "invalid_action" };
+}
+
+function validateJoinInviteCode(input) {
+  const configuredCode = String(process.env.LIMOS_JOIN_CODE || process.env.LIMOS_INVITE_CODE || "").trim();
+  if (!configuredCode) return { ok: true };
+
+  const submittedCode = String(input || "").trim();
+  if (submittedCode && submittedCode === configuredCode) return { ok: true };
+
+  return { ok: false, status: 403, error: "invalid_invite_code" };
 }

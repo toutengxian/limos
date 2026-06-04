@@ -147,6 +147,7 @@ const elements = {
   adminFields: $("#admin-fields"),
   loginMember: $("#login-member"),
   loginCode: $("#login-code"),
+  joinInviteCode: $("#join-invite-code"),
   accessCode: $("#access-code"),
   adminCode: $("#admin-code"),
   authSubmit: $("#auth-submit"),
@@ -902,7 +903,16 @@ function createApiStore(config) {
     });
 
     if (!response.ok) {
-      throw new Error(`Member API failed: ${response.status}`);
+      let payload = null;
+      try {
+        payload = await response.json();
+      } catch {
+        payload = null;
+      }
+      const error = new Error(`Member API failed: ${response.status}`);
+      error.code = payload?.error || "";
+      error.status = response.status;
+      throw error;
     }
     return response.json();
   }
@@ -1023,9 +1033,10 @@ async function syncRemoteState(options = {}) {
       || elements.displayName.value
       || elements.initialWeight.value
       || elements.heightCm.value
+      || elements.joinInviteCode.value
       || elements.accessCode.value,
     );
-    if (!hasJoinDraft) {
+    if (!hasJoinDraft && authMode !== "register" && authMode !== "admin") {
       authMode = state.participants.length ? "login" : "register";
     }
     renderOnboardingOptions();
@@ -1148,6 +1159,7 @@ function hydrateOnboardingForm() {
   elements.displayName.value = "";
   elements.initialWeight.value = "";
   elements.heightCm.value = "";
+  elements.joinInviteCode.value = "";
   elements.accessCode.value = "";
   elements.loginCode.value = "";
   elements.adminCode.value = "";
@@ -1213,6 +1225,7 @@ async function submitOnboarding(event) {
   const name = elements.displayName.value.trim();
   const initialWeight = Number(elements.initialWeight.value);
   const heightCm = Number(elements.heightCm.value);
+  const inviteCode = elements.joinInviteCode.value.trim();
   const accessCode = elements.accessCode.value.trim();
 
   if (!name || !isValidWeight(initialWeight) || !isValidHeight(heightCm)) {
@@ -1261,16 +1274,18 @@ async function submitOnboarding(event) {
   saveSession({ role: ROLE_MEMBER, participantId: participant.id });
   try {
     await syncMemberMutation("join", {
+      inviteCode,
       participant: participantMutationPayload(participant, {
         includeAvatar: true,
         includeEntries: true,
       }),
     });
     pendingAvatarUploadIds.delete(participant.id);
-  } catch {
+  } catch (error) {
     state.participants = previousParticipants;
     state.competition = previousCompetition;
     clearSession();
+    showToast(error?.code === "invalid_invite_code" ? "邀请码不对，问一下队长" : "加入失败，稍后再试");
     return;
   }
 
